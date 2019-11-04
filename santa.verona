@@ -250,7 +250,7 @@ class Workshop {
   }
 
 
-  meet_elf(v: (Elf & iso) | (None & imm)) {
+  elf_meet(v: (Elf & iso) | (None & imm)) {
     match v  {
       var n: None => None,
       var e: Elf => {
