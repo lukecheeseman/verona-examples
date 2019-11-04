@@ -103,8 +103,9 @@ class Reindeer {
   }
 
   graze(self: iso): Reindeer & iso {
+    // This should be some sleep
     var i = 0;
-    while (i < 3000000) {
+    while (i < 2000000) {
       i = i + 1;
     };
     self
@@ -134,6 +135,7 @@ class Elf {
   }
 
   holiday(self: iso): Elf & iso {
+    // This should be some sleep
     var i = 0;
     while (i < 2000000) {
       i = i + 1;
@@ -159,20 +161,57 @@ class Santa {
   meet_in_study(self: mut) {
     Builtin.print("Santa is meeting in study\n");
   }
-
-  sleep(self: iso): Santa {
-    var i = 0;
-    while (i < 4000000) {
-      i = i + 1;
-    };
-    self
-  }
 }
 
 class Workshop {
-  start(santa: cown[Santa],
-        reindeer_group: cown[Group[Reindeer & iso]],
-        elf_group: cown[Group[Elf & iso]]) {
+  run() {
+    var reindeer_group = cown(Group.create(9));
+
+    var r0 = Reindeer.create(reindeer_group, 0);
+    var r1 = Reindeer.create(reindeer_group, 1);
+    var r2 = Reindeer.create(reindeer_group, 2);
+    var r3 = Reindeer.create(reindeer_group, 3);
+    var r4 = Reindeer.create(reindeer_group, 4);
+    var r5 = Reindeer.create(reindeer_group, 5);
+    var r6 = Reindeer.create(reindeer_group, 6);
+    var r7 = Reindeer.create(reindeer_group, 7);
+    var r8 = Reindeer.create(reindeer_group, 8);
+
+    r0.ready();
+    r1.ready();
+    r2.ready();
+    r3.ready();
+    r4.ready();
+    r5.ready();
+    r6.ready();
+    r7.ready();
+    r8.ready();
+
+    var elf_group = cown(Group.create(3));
+
+    var e0 = Elf.create(elf_group, 0);
+    var e1 = Elf.create(elf_group, 1);
+    var e2 = Elf.create(elf_group, 2);
+    var e3 = Elf.create(elf_group, 3);
+    var e4 = Elf.create(elf_group, 4);
+    var e5 = Elf.create(elf_group, 5);
+    var e6 = Elf.create(elf_group, 6);
+    var e7 = Elf.create(elf_group, 7);
+    var e8 = Elf.create(elf_group, 8);
+    var e9 = Elf.create(elf_group, 9);
+
+    e0.ready();
+    e1.ready();
+    e2.ready();
+    e3.ready();
+    e4.ready();
+    e5.ready();
+    e6.ready();
+    e7.ready();
+    e8.ready();
+    e9.ready();
+
+    var santa = cown(Santa.create());
     Workshop.deliver_toys(santa, reindeer_group);
     Workshop.meet_in_study(santa, elf_group);
   }
@@ -193,21 +232,6 @@ class Workshop {
     when(var s = santa, var g = reindeer_group) {
       if (g.full()) {
         s = s.deliver_toys();
-        /*
-          promise_test(i: U64)
-          {
-            var p = Promise.create();
-            var r = (mut-view p).wait_handle();
-            when(r) { U64Obj.print(r) };
-            Builtin.print1("{}\n", i + 1);
-            var v = new U64Obj;
-            v.v = i + 2;
-            p.fulfill(v);
-            Builtin.print1("{}\n", i + 3);
-          }
-          santa promise
-        when() { s.sleep(); };
-        */
         Workshop.reindeer_deliver(g.pop());
         Workshop.reindeer_deliver(g.pop());
         Workshop.reindeer_deliver(g.pop());
@@ -256,54 +280,6 @@ class Workshop {
 
 class Main {
   main() {
-    var reindeer_group = cown(Group.create(4));
-
-    var r0 = Reindeer.create(reindeer_group, 0);
-    var r1 = Reindeer.create(reindeer_group, 1);
-    var r2 = Reindeer.create(reindeer_group, 2);
-    var r3 = Reindeer.create(reindeer_group, 3);
-    var r4 = Reindeer.create(reindeer_group, 4);
-    var r5 = Reindeer.create(reindeer_group, 5);
-    var r6 = Reindeer.create(reindeer_group, 6);
-    var r7 = Reindeer.create(reindeer_group, 7);
-    var r8 = Reindeer.create(reindeer_group, 8);
-
-    r0.ready();
-    r1.ready();
-    r2.ready();
-    r3.ready();
-    r4.ready();
-    r5.ready();
-    r6.ready();
-    r7.ready();
-    r8.ready();
-
-    var elf_group = cown(Group.create(3));
-
-    var e0 = Elf.create(elf_group, 0);
-    var e1 = Elf.create(elf_group, 1);
-    var e2 = Elf.create(elf_group, 2);
-    var e3 = Elf.create(elf_group, 3);
-    var e4 = Elf.create(elf_group, 4);
-    var e5 = Elf.create(elf_group, 5);
-    var e6 = Elf.create(elf_group, 6);
-    var e7 = Elf.create(elf_group, 7);
-    var e8 = Elf.create(elf_group, 8);
-    var e9 = Elf.create(elf_group, 9);
-
-    e0.ready();
-    e1.ready();
-    e2.ready();
-    e3.ready();
-    e4.ready();
-    e5.ready();
-    e6.ready();
-    e7.ready();
-    e8.ready();
-    e9.ready();
-
-    var santa = cown(Santa.create());
-
-    Workshop.start(santa, reindeer_group, elf_group);
+    Workshop.run();
   }
 }
