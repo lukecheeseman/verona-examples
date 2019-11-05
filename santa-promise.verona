@@ -69,18 +69,34 @@ class ReindeerGroup {
   _capacity: U64;
   _data: List[Reindeer & iso] & iso;
   _promise: Promise[List[Reindeer & iso]] & iso;
+  _santa: cown[Santa];
 
-  _create_promise(): Promise[List[Reindeer & iso]] & iso {
+  _reindeer_deliver(v: (Reindeer & iso) | (None & imm)) {
+    match v  {
+      var n: None => None,
+      var r: Reindeer => {
+        r = r.deliver_toys(); 
+        r.graze();
+      }
+    };
+  }
+
+  _create_promise(self: mut): Promise[List[Reindeer & iso]] & iso {
     var p = Promise.create();
-    var r = (mut-view p).wait_handle();
-    when (r) {
-      Builtin.print1("{:#}\n", r);
+    var g = (mut-view p).wait_handle();
+    when (var s = self._santa, g) {
+      s.deliver_toys();
+      ReindeerGroup._reindeer_deliver(g.pop());
+      ReindeerGroup._reindeer_deliver(g.pop());
+      ReindeerGroup._reindeer_deliver(g.pop());
+      ReindeerGroup._reindeer_deliver(g.pop());
     };
     p
   }
 
-  create(capacity: U64): ReindeerGroup & iso {
+  create(santa: cown[Santa], capacity: U64): ReindeerGroup & iso {
     var result = new ReindeerGroup;
+    result._santa = santa;
     result._capacity = capacity;
     result._promise = (mut-view result)._create_promise();
     result._data = List.create();
@@ -94,7 +110,7 @@ class ReindeerGroup {
   add(self: mut, value: Reindeer & iso) {
     (mut-view (self._data)).push(value);
     if self.full() {
-      var p = (self._promise = ReindeerGroup._create_promise());
+      var p = (self._promise = self._create_promise());
       p.fulfill(self._data = List.create())
     } else {
     }
@@ -113,11 +129,11 @@ class Reindeer {
   _group: cown[ReindeerGroup];
   _id: U64;
 
-  create(group: cown[ReindeerGroup], id: U64): Reindeer & iso {
+  create(group: cown[ReindeerGroup], id: U64) {
     var result = new Reindeer;
     result._group = group;
     result._id = id;
-    result
+    result.ready();
   } 
 
   ready(self: iso) {
@@ -125,16 +141,16 @@ class Reindeer {
       g.add(self);
     }
   }
-}
-/*
 
-  graze(self: iso): Reindeer & iso {
+  graze(self: iso) {
     // This should be some sleep
-    var i = 0;
-    while (i < 2000000) {
-      i = i + 1;
-    };
-    self
+    when() {
+      var i = 0;
+      while (i < 2000000) {
+        i = i + 1;
+      };
+      self.ready();
+    }
   }
 
   deliver_toys(self: iso): Reindeer & iso {
@@ -152,9 +168,19 @@ class Santa {
     Builtin.print("Santa is delivering toys\n");
   }
 }
-
 class Workshop {
   run() {
+    var santa = cown(Santa.create());
+
+    var rg = cown(ReindeerGroup.create(santa, 4));
+
+    Reindeer.create(rg, 0);
+    Reindeer.create(rg, 1);
+    Reindeer.create(rg, 2);
+    Reindeer.create(rg, 3);
+  }
+}
+/*
     var reindeer_group = cown(ReindeerGroup.create(9));
     var i = 0;
     while i < 9 {
@@ -162,7 +188,6 @@ class Workshop {
       i = i + 1;
     };
 
-    var santa = cown(Santa.create());
 
     Workshop._deliver_toys(santa, reindeer_group);
   }
@@ -204,11 +229,6 @@ class Workshop {
 
 class Main {
   main() {
-    var rg = mut-view(ReindeerGroup.create(4));
-//    rg.add(new Reindeer);
-//    rg.add(new Reindeer);
-//    rg.add(new Reindeer);
-//    rg.add(new Reindeer);
- //   Workshop.run();
+    Workshop.run();
   }
 }
