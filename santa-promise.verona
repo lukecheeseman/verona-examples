@@ -1,0 +1,214 @@
+class Node[T: iso | mut] {
+  value: T | (None & imm);
+  next: (Node[T] & mut) | (None & imm);
+}
+
+class List[T: iso | mut] {
+  _head: (Node[T] & mut) | (None & imm);
+  _size: U64;
+  _none: (None & imm);
+
+  _init(self: mut) {
+    self._none = freeze (new None);
+    self._head = self._none;
+    self._size = 0;
+  }
+
+  create(): List[T] & iso {
+    var result = new List;
+    (mut-view result)._init();
+    result
+  }
+
+  create_in(parent: mut): List[T] & mut {
+    var result = new List in parent;
+    result._init();
+    result
+  }
+
+  push(self: mut, value: T) {
+    self._head = self._push(self._head = self._none, value);
+    self._size = self._size + 1;
+  }
+
+  _push(self: mut,
+          current: (Node[T] & mut) | (None & imm),
+          value: T): (Node[T] & mut) {
+    match current
+    {
+      var e: None => {
+        var node = new Node in self;
+        node.value = value;
+        node.next = self._none;
+        node
+      },
+      var n: Node[T] => {
+        n.next = self._push(n.next = self._none, value);
+        n
+      }
+    }
+  }
+
+  pop(self: mut): T | (None & imm) {
+    match (self._head = self._none) {
+      var e: None => e,
+      var n: Node[T] => {
+        self._head = (n.next = self._none);
+        self._size = self._size - 1;
+        n.value = self._none
+      }
+    }
+  }
+
+  size(self: mut): U64 {
+    self._size
+  }
+}
+
+class ReindeerGroup {
+  _capacity: U64;
+  _data: List[Reindeer & iso] & iso;
+  _promise: Promise[List[Reindeer & iso]] & iso;
+
+  _create_promise(): Promise[List[Reindeer & iso]] & iso {
+    var p = Promise.create();
+    var r = (mut-view p).wait_handle();
+    when (r) {
+      Builtin.print1("{:#}\n", r);
+    };
+    p
+  }
+
+  create(capacity: U64): ReindeerGroup & iso {
+    var result = new ReindeerGroup;
+    result._capacity = capacity;
+    result._promise = (mut-view result)._create_promise();
+    result._data = List.create();
+    result
+  }
+
+  full(self: mut): U64 {
+    (mut-view (self._data)).size() >= self._capacity
+  }
+
+  add(self: mut, value: Reindeer & iso) {
+    (mut-view (self._data)).push(value);
+    if self.full() {
+      var p = (self._promise = ReindeerGroup._create_promise());
+      p.fulfill(self._data = List.create())
+    } else {
+    }
+  }
+
+  remove(self: mut): (Reindeer & iso) | (None & imm) {
+    (mut-view (self._data)).pop()
+  }
+
+  capacity(self: iso): U64 {
+    self._capacity
+  }
+}
+
+class Reindeer {
+  _group: cown[ReindeerGroup];
+  _id: U64;
+
+  create(group: cown[ReindeerGroup], id: U64): Reindeer & iso {
+    var result = new Reindeer;
+    result._group = group;
+    result._id = id;
+    result
+  } 
+
+  ready(self: iso) {
+    when (var g = self._group) {
+      g.add(self);
+    }
+  }
+}
+/*
+
+  graze(self: iso): Reindeer & iso {
+    // This should be some sleep
+    var i = 0;
+    while (i < 2000000) {
+      i = i + 1;
+    };
+    self
+  }
+
+  deliver_toys(self: iso): Reindeer & iso {
+    Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
+    self
+  }
+}
+
+class Santa {
+  create(): Santa & iso {
+    new Santa
+  }
+
+  deliver_toys(self: mut) {
+    Builtin.print("Santa is delivering toys\n");
+  }
+}
+
+class Workshop {
+  run() {
+    var reindeer_group = cown(ReindeerGroup.create(9));
+    var i = 0;
+    while i < 9 {
+      (Reindeer.create(reindeer_group, i)).ready();
+      i = i + 1;
+    };
+
+    var santa = cown(Santa.create());
+
+    Workshop._deliver_toys(santa, reindeer_group);
+  }
+
+  _reindeer_deliver(v: (Reindeer & iso) | (None & imm)) {
+    match v  {
+      var n: None => None,
+      var r: Reindeer => {
+        r = r.deliver_toys(); 
+        when() {
+          (r.graze()).ready();
+        }
+      }
+    };
+  }
+
+  _reindeer_dispatch(g: ReindeerGroup & mut) {
+    var i = 0;
+    while (i < 9) {
+      Workshop._reindeer_deliver(g.remove());
+      i = i + 1;
+    };
+  }
+
+  _deliver_toys(santa: cown[Santa], reindeer_group: cown[ReindeerGroup]) {
+    when(var s = santa, var g = reindeer_group) {
+      if (g.full()) {
+        s = s.deliver_toys();
+        Workshop._reindeer_dispatch(g);
+        Builtin.print("========================\n");
+      } else {
+
+      };
+      Workshop._deliver_toys(santa, reindeer_group);
+    };
+  }
+}
+*/
+
+class Main {
+  main() {
+    var rg = mut-view(ReindeerGroup.create(4));
+//    rg.add(new Reindeer);
+//    rg.add(new Reindeer);
+//    rg.add(new Reindeer);
+//    rg.add(new Reindeer);
+ //   Workshop.run();
+  }
+}
