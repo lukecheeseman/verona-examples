@@ -69,7 +69,6 @@ class ReindeerGroup {
   _capacity: U64;
   _data: List[Reindeer & iso] & iso;
   _promise: Promise[List[Reindeer & iso]] & iso;
-  _santa: cown[Santa];
 
   _reindeer_deliver(v: (Reindeer & iso) | (None & imm)) {
     match v  {
@@ -84,8 +83,7 @@ class ReindeerGroup {
   _create_promise(self: mut): Promise[List[Reindeer & iso]] & iso {
     var p = Promise.create();
     var g = (mut-view p).wait_handle();
-    when (var s = self._santa, g) {
-      s.deliver_toys();
+    when (g) {
       ReindeerGroup._reindeer_deliver(g.pop());
       ReindeerGroup._reindeer_deliver(g.pop());
       ReindeerGroup._reindeer_deliver(g.pop());
@@ -94,9 +92,8 @@ class ReindeerGroup {
     p
   }
 
-  create(santa: cown[Santa], capacity: U64): ReindeerGroup & iso {
+  create(capacity: U64): ReindeerGroup & iso {
     var result = new ReindeerGroup;
-    result._santa = santa;
     result._capacity = capacity;
     result._promise = (mut-view result)._create_promise();
     result._data = List.create();
@@ -172,7 +169,7 @@ class Workshop {
   run() {
     var santa = cown(Santa.create());
 
-    var rg = cown(ReindeerGroup.create(santa, 4));
+    var rg = cown(ReindeerGroup.create(4));
 
     Reindeer.create(rg, 0);
     Reindeer.create(rg, 1);
@@ -180,52 +177,6 @@ class Workshop {
     Reindeer.create(rg, 3);
   }
 }
-/*
-    var reindeer_group = cown(ReindeerGroup.create(9));
-    var i = 0;
-    while i < 9 {
-      (Reindeer.create(reindeer_group, i)).ready();
-      i = i + 1;
-    };
-
-
-    Workshop._deliver_toys(santa, reindeer_group);
-  }
-
-  _reindeer_deliver(v: (Reindeer & iso) | (None & imm)) {
-    match v  {
-      var n: None => None,
-      var r: Reindeer => {
-        r = r.deliver_toys(); 
-        when() {
-          (r.graze()).ready();
-        }
-      }
-    };
-  }
-
-  _reindeer_dispatch(g: ReindeerGroup & mut) {
-    var i = 0;
-    while (i < 9) {
-      Workshop._reindeer_deliver(g.remove());
-      i = i + 1;
-    };
-  }
-
-  _deliver_toys(santa: cown[Santa], reindeer_group: cown[ReindeerGroup]) {
-    when(var s = santa, var g = reindeer_group) {
-      if (g.full()) {
-        s = s.deliver_toys();
-        Workshop._reindeer_dispatch(g);
-        Builtin.print("========================\n");
-      } else {
-
-      };
-      Workshop._deliver_toys(santa, reindeer_group);
-    };
-  }
-}
-*/
 
 class Main {
   main() {
