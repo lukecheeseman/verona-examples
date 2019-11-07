@@ -65,41 +65,90 @@ class List[T: iso | mut] {
   }
 }
 
-class ReindeerGroup {
-  _capacity: U64;
-  _data: List[Reindeer & iso] & iso;
-  _promise: Promise[List[Reindeer & iso]] & iso;
+interface Task[T: iso | mut] {
+  promise(self: mut): Promise[List[T]] & iso;
+}
+
+class DeliverToys {
   _santa: cown[Santa];
+
+  create(santa: cown[Santa]): DeliverToys & iso {
+    var result = new DeliverToys;
+    result._santa = santa;
+    result
+  }
 
   _reindeer_deliver(v: (Reindeer & iso) | (None & imm)) {
     match v  {
       var n: None => None,
       var r: Reindeer => {
         r = r.deliver_toys();
-        r.graze();
+        r.holiday();
       }
     };
   }
 
-  _create_promise(self: mut): Promise[List[Reindeer & iso]] & iso {
+  promise(self: mut): Promise[List[Reindeer & iso]] & iso {
     var p = Promise.create();
     var g = (mut-view p).wait_handle();
-    when (var s = self._santa, g) {
+    when (g, var s = self._santa) {
       s.deliver_toys();
+      // This is kind of odd as each reindeer delivers a toy and then goes
+      // on holiday. Should probably be, all deliver and then all go on holiday.
       while g.size() > 0 {
-        ReindeerGroup._reindeer_deliver(g.pop());
+        DeliverToys._reindeer_deliver(g.pop());
       };
       Builtin.print("=============================\n");
     };
     p
   }
+}
 
-  create(capacity: U64, santa: cown[Santa]): ReindeerGroup & iso {
-    var result = new ReindeerGroup;
-    result._capacity = capacity;
-    result._data = List.create();
+class MeetInStudy {
+  _santa: cown[Santa];
+
+  create(santa: cown[Santa]): MeetInStudy & iso {
+    var result = new MeetInStudy;
     result._santa = santa;
-    result._promise = (mut-view result)._create_promise();
+    result
+  }
+
+  _elf_meet(v: (Elf & iso) | (None & imm)) {
+    match v  {
+      var n: None => None,
+      var e: Elf => {
+        e = e.meet_in_study();
+        e.work();
+      }
+    };
+  }
+
+  promise(self: mut): Promise[List[Elf & iso]] & iso {
+    var p = Promise.create();
+    var g = (mut-view p).wait_handle();
+    when (g, var s = self._santa) {
+      s.meet_in_study();
+      while g.size() > 0 {
+        MeetInStudy._elf_meet(g.pop());
+      };
+      Builtin.print("=============================\n");
+    };
+    p
+  }
+}
+
+class Group[T: mut | iso] {
+  _capacity: U64;
+  _promise: Promise[List[T]] & iso;
+  _task: Task[T] & iso;
+  _data: List[T] & iso;
+
+  create(capacity: U64, task: Task[T] & iso): Group[T] & iso {
+    var result = new Group;
+    result._capacity = capacity;
+    result._promise = (mut-view task).promise();
+    result._task = task;
+    result._data = List.create();
     result
   }
 
@@ -107,16 +156,17 @@ class ReindeerGroup {
     (mut-view (self._data)).size() >= self._capacity
   }
 
-  add(self: mut, value: Reindeer & iso) {
+  add(self: mut, value: T) {
     (mut-view (self._data)).push(value);
     if self.full() {
-      var p = (self._promise = self._create_promise());
+      var t = mut-view (self._task);
+      var p = (self._promise = t.promise());
       p.fulfill(self._data = List.create())
     } else {
     }
   }
 
-  remove(self: mut): (Reindeer & iso) | (None & imm) {
+  remove(self: mut): T | (None & imm) {
     (mut-view (self._data)).pop()
   }
 
@@ -126,10 +176,10 @@ class ReindeerGroup {
 }
 
 class Reindeer {
-  _group: cown[ReindeerGroup];
+  _group: cown[Group[Reindeer & iso]];
   _id: U64;
 
-  create(group: cown[ReindeerGroup], id: U64) {
+  create(group: cown[Group[Reindeer & iso]], id: U64) {
     var result = new Reindeer;
     result._group = group;
     result._id = id;
@@ -142,7 +192,7 @@ class Reindeer {
     }
   }
 
-  graze(self: iso) {
+  holiday(self: iso) {
     // This should be some sleep
     when() {
       var i = 0;
@@ -159,70 +209,11 @@ class Reindeer {
   }
 }
 
-class ElfGroup {
-  _capacity: U64;
-  _data: List[Elf & iso] & iso;
-  _promise: Promise[List[Elf & iso]] & iso;
-  _santa: cown[Santa];
-
-  _elf_meet(v: (Elf & iso) | (None & imm)) {
-    match v  {
-      var n: None => None,
-      var e: Elf => {
-        e = e.meet_in_study();
-        e.holiday();
-      }
-    };
-  }
-
-  _create_promise(self: mut): Promise[List[Elf & iso]] & iso {
-    var p = Promise.create();
-    var g = (mut-view p).wait_handle();
-    when (var s = self._santa, g) {
-      s.meet_in_study();
-      while g.size() > 0 {
-        ElfGroup._elf_meet(g.pop());
-      };
-      Builtin.print("=============================\n");
-    };
-    p
-  }
-
-  create(capacity: U64, santa: cown[Santa]): ElfGroup & iso {
-    var result = new ElfGroup;
-    result._capacity = capacity;
-    result._data = List.create();
-    result._santa = santa;
-    result._promise = (mut-view result)._create_promise();
-    result
-  }
-
-  full(self: mut): U64 {
-    (mut-view (self._data)).size() >= self._capacity
-  }
-
-  add(self: mut, value: Elf & iso) {
-    (mut-view (self._data)).push(value);
-    if self.full() {
-      var p = (self._promise = self._create_promise());
-      p.fulfill(self._data = List.create())
-    } else {}
-  }
-
-  remove(self: mut): (Elf & iso) | (None & imm) {
-    (mut-view (self._data)).pop()
-  }
-
-  capacity(self: iso): U64 {
-    self._capacity
-  }
-}
-
 class Elf {
-  _group: cown[ElfGroup];
+  _group: cown[Group[Elf & iso]];
   _id: U64;
 
-  create(group: cown[ElfGroup], id: U64) {
+  create(group: cown[Group[Elf & iso]], id: U64) {
     var result = new Elf;
     result._group = group;
     result._id = id;
@@ -235,7 +226,7 @@ class Elf {
     }
   }
 
-  holiday(self: iso) {
+  work(self: iso) {
     // This should be some sleep
     when() {
       var i = 0;
@@ -270,7 +261,8 @@ class Workshop {
   run() {
     var santa = cown(Santa.create());
 
-    var rg = cown(ReindeerGroup.create(9, santa));
+    var rt = DeliverToys.create(santa);
+    var rg = cown(Group.create(9, rt));
 
     var i = 0;
     while i < 9 {
@@ -278,13 +270,13 @@ class Workshop {
       i = i + 1;
     };
 
-    /*
-    var eg = cown(ElfGroup.create(9, santa));
+    var et = MeetInStudy.create(santa);
+    var eg = cown(Group.create(3, et));
     i = 0;
-    while i < 9 {
+    while i < 10 {
       Elf.create(eg, i);
       i = i + 1;
-    }*/
+    }
   }
 }
 
