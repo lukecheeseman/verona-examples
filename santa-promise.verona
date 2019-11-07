@@ -65,8 +65,8 @@ class List[T: iso | mut] {
   }
 }
 
-interface Task[T: iso | mut] {
-  promise(self: mut): Promise[List[T]] & iso;
+interface Task[T] {
+  promise(self: mut): Promise[T] & iso;
 }
 
 class DeliverToys {
@@ -88,7 +88,7 @@ class DeliverToys {
     };
   }
 
-  promise(self: mut): Promise[List[Reindeer & iso]] & iso {
+  promise(self: mut): Promise[List[Reindeer & iso] & iso] & iso {
     var p = Promise.create();
     var g = (mut-view p).wait_handle();
     when (g, var s = self._santa) {
@@ -123,7 +123,7 @@ class MeetInStudy {
     };
   }
 
-  promise(self: mut): Promise[List[Elf & iso]] & iso {
+  promise(self: mut): Promise[List[Elf & iso] & iso] & iso {
     var p = Promise.create();
     var g = (mut-view p).wait_handle();
     when (g, var s = self._santa) {
@@ -139,11 +139,11 @@ class MeetInStudy {
 
 class Group[T: mut | iso] {
   _capacity: U64;
-  _promise: Promise[List[T]] & iso;
-  _task: Task[T] & iso;
+  _promise: Promise[List[T] & iso] & iso;
+  _task: Task[List[T] & iso] & iso;
   _data: List[T] & iso;
 
-  create(capacity: U64, task: Task[T] & iso): Group[T] & iso {
+  create(capacity: U64, task: Task[List[T] & iso] & iso): Group[T] & iso {
     var result = new Group;
     result._capacity = capacity;
     result._promise = (mut-view task).promise();
