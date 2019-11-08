@@ -157,23 +157,59 @@ class Writer[T] {
   }
 }
 
+class Producer[T: iso] {
+  _channel: cown[Channel[T]];
+
+  create(channel: cown[Channel[T]]): Producer[T] & iso {
+    var result = new Producer;
+    result._channel = channel;
+    result
+  }
+
+  produce(self: mut, value: T) {
+    when (var channel = self._channel) {
+      channel.write(value);
+    }
+  }
+}
+
+class Consumer[T: iso] {
+  _channel: cown[Channel[T]];
+
+  create(channel: cown[Channel[T]]): Consumer[T] & iso {
+    var result = new Consumer;
+    result._channel = channel;
+    result
+  }
+
+  consume(self: mut) {
+    when (var channel = self._channel) {
+      when(var box = channel.read()) {
+        Builtin.print1("Recieved: {:#}\n", box.data);
+      }
+    }
+  }
+}
+
 class Main {
   main() {
-    var channel = mut-view (Channel.create());
+    var channel = cown(Channel.create());
 
-    channel.write(U64Obj.create(42));
-
-    when(var b = channel.read()) {
-      Builtin.print("read\n");
-//      Builtin.print1("{:#}\n", b.data)
+    when() {
+      var c = Consumer.create(channel);
+      (mut-view c).consume();
+      (mut-view c).consume();
+      (mut-view c).consume();
+      (mut-view c).consume();
     };
 
-    when(var b = channel.read()) {
-      Builtin.print("read\n");
-//      Builtin.print1("{:#}\n", b.data)
+    when() {
+      var p = Producer.create(channel);
+      (mut-view p).produce(U64Obj.create(0));
+      (mut-view p).produce(U64Obj.create(1));
+      (mut-view p).produce(U64Obj.create(2));
+      (mut-view p).produce(U64Obj.create(3));
     };
-
-    channel.write(U64Obj.create(42));
 
   }
 }
