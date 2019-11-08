@@ -1,0 +1,179 @@
+class Node[T: iso | mut] {
+  value: T | (None & imm);
+  next: (Node[T] & mut) | (None & imm);
+}
+
+class List[T: iso | mut] {
+  _head: (Node[T] & mut) | (None & imm);
+  _size: U64;
+  _none: (None & imm);
+
+  _init(self: mut) {
+    self._none = freeze (new None);
+    self._head = self._none;
+    self._size = 0;
+  }
+
+  create(): List[T] & iso {
+    var result = new List;
+    (mut-view result)._init();
+    result
+  }
+
+  push(self: mut, value: T) {
+    self._head = self._push(self._head = self._none, value);
+    self._size = self._size + 1;
+  }
+
+  _push(self: mut,
+          current: (Node[T] & mut) | (None & imm),
+          value: T): (Node[T] & mut) {
+    match current
+    {
+      var e: None => {
+        var node = new Node in self;
+        node.value = value;
+        node.next = self._none;
+        node
+      },
+      var n: Node[T] => {
+        n.next = self._push(n.next = self._none, value);
+        n
+      }
+    }
+  }
+
+  pop(self: mut): T | (None & imm) {
+    match (self._head = self._none) {
+      var e: None => e,
+      var n: Node[T] => {
+        self._head = (n.next = self._none);
+        self._size = self._size - 1;
+        n.value = self._none
+      }
+    }
+  }
+
+  size(self: mut): U64 {
+    self._size
+  }
+}
+
+class Channel[T] {
+  _messages: (List[Reader[T] & iso] & iso) | (List[Writer[T] & iso] & iso);
+
+  create(): Channel[T] & iso {
+    var result = new Channel;
+    result._messages = List.create();
+    result
+  }
+
+  write(self: mut, value: T) {
+    match (self._messages) {
+      var ws: List[Writer[T] & iso] => {
+        (mut-view ws).push(Writer.create(value));
+      }
+      var rs: List[Reader[T] & iso] => {
+        match((mut-view rs).pop()) {
+          var _: None => {
+            var ws = List.create();
+            (mut-view ws).push(Writer.create(value));
+            self._messages = ws;
+          }
+          var r: Reader[T] => r.write(value),
+        }
+      }
+    };
+  }
+
+  read(self: mut): cown[Box[T]] {
+    match (self._messages) {
+      var ws: List[Writer[T] & iso] => {
+        match((mut-view ws).pop()) {
+          var _: None => {
+            var rs = List.create();
+            var r = Reader.create();
+            var handle = (mut-view r).await();
+            (mut-view rs).push(r);
+            self._messages = rs;
+            handle
+          }
+          var w: Writer[T] => cown(w.read()),
+        }
+      }
+      var rs: List[Reader[T] & iso] => {
+        var r = Reader.create();
+        var handle = (mut-view r).await();
+        (mut-view rs).push(r);
+        handle
+      }
+    }
+  }
+}
+
+class Box[T] {
+  data: T;
+
+  create(data: T): Box[T] & iso {
+    var result = new Box;
+    result.data = data;
+    result
+  }
+
+  read(self: iso): T {
+    self.data
+  }
+}
+
+class Reader[T] {
+  _promise: Promise[Box[T] & iso] & iso;
+
+  create(): Reader[T] & iso {
+    var result = new Reader;
+    result._promise = Promise.create();
+    result
+  }
+
+  await(self: mut): cown[Box[T] & iso] {
+    (mut-view (self._promise)).wait_handle()
+  }
+
+  write(self: iso, value: T) {
+    (self._promise).fulfill(Box.create(value));
+  }
+}
+
+class Writer[T] {
+  _data: T;
+
+  create(data: T): Writer[T] & iso {
+    var result = new Writer;
+    result._data = data;
+    result
+  }
+
+  read(self: iso): Box[T] & iso {
+    Box.create(self._data)
+  }
+}
+
+class Main {
+  main() {
+    var channel = mut-view (Channel.create());
+
+    channel.write(U64Obj.create(42));
+
+    when(var b = channel.read()) {
+      Builtin.print("read\n");
+//      Builtin.print1("{:#}\n", b.data)
+    };
+
+    when(var b = channel.read()) {
+      Builtin.print("read\n");
+//      Builtin.print1("{:#}\n", b.data)
+    };
+
+    channel.write(U64Obj.create(42));
+
+  }
+}
