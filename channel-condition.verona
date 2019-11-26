@@ -71,21 +71,39 @@ class Box[T] {
   }
 }
 
+class Condition {
+  _promise: Promise[None] & iso;
+
+  create(): Condition & iso {
+    var result = new Condition;
+    result._promise = Promise.create();
+    result
+  }
+
+  await(self: mut): cown[None] {
+    (mut-view (self._promise)).wait_handle()
+  }
+
+  signal(self: mut) {
+    (self._promise = Promise.create()).fulfill(new None);
+  }
+}
+
 class Channel[T] {
   _queue: Queue[Box[T & iso]] & iso;
-  _condition: Promise[None] & iso;
+  _condition: Condition & iso;
 
   create(): cown[Channel[T]] {
     var result = new Channel;
     result._queue = Queue.create();
-    result._condition = Promise.create();
+    result._condition = Condition.create();
     cown(result)
   }
 
   write(channel: cown[Channel[T]], value: T & iso) {
     when (var c = channel) {
       (mut-view (c._queue)).add(Box.create(value));
-      (c._condition = Promise.create()).fulfill(new None);
+      (mut-view (c._condition)).signal();
     }
   }
 
@@ -97,8 +115,7 @@ class Channel[T] {
           p.fulfill(v);
         }
         var _: None => {
-          var r = (mut-view (c._condition)).wait_handle();
-          when (r) {
+          when (var r = (mut-view (c._condition)).await()) {
             Channel._read(channel, p);
           };
         }
