@@ -1,0 +1,168 @@
+class Node[T]
+{
+  value: (T & iso) | (None & imm);
+  next: (Node[T] & mut) | (None & imm);
+}
+
+class Queue[T]
+{
+  hd: Node[T] & mut;
+  tl: Node[T] & mut;
+  none: None & imm;  // Fix when we have singletons
+
+  create(): Queue[T] & iso
+  {
+    var q = new Queue;
+    var n = new Node in q;
+    q.hd = n;
+    q.tl = n;
+    q.none = freeze (new None);
+    n.next = q.none;
+    n.value = q.none;
+    q
+  }
+
+  add(self: mut, v: T & iso)
+  {
+    var n_tail = new Node in self;
+    n_tail.next = self.none;
+    n_tail.value = self.none;
+
+    var old_tl = self.tl;
+    old_tl.value = v;
+    old_tl.next = n_tail;
+    self.tl = n_tail;
+  }
+
+  remove(self: mut): (T & iso) | (None & imm)
+  {
+    var h = self.hd;
+    match (h.value = self.none)
+    {
+      var a: None => a,
+      var v: T =>
+      {
+        match (h.next)
+        {
+          var a: None => self.none, // Should be unreachable, but not enforced by type system.
+          var b: Node[T] =>
+          {
+            self.hd = b;
+            v
+          }
+        }
+      }
+    }
+  }
+}
+
+class Box[T] {
+
+  _data: (T & iso) | (None & imm);
+
+  create(data: T & iso): Box[T] & iso {
+    var result = new Box;
+    result._data = data;
+    result
+  }
+
+  data(self: mut): (T & iso) | (None & imm) {
+    self._data = freeze (new None)
+  }
+}
+
+class Channel[T] {
+  _queue: Queue[Box[T & iso]] & iso;
+  _condition: Promise[None] & iso;
+
+  create(): cown[Channel[T]] {
+    var result = new Channel;
+    result._queue = Queue.create();
+    result._condition = Promise.create();
+    cown(result)
+  }
+
+  write(channel: cown[Channel[T]], value: T & iso) {
+    when (var c = channel) {
+      (mut-view (c._queue)).add(Box.create(value));
+      (c._condition = Promise.create()).fulfill(new None);
+    }
+  }
+
+  _read(channel: cown[Channel[T]], p: Promise[Box[T]] & iso) {
+    when (var c = channel) {
+      var value = (mut-view (c._queue)).remove();
+      match (value) {
+        var v: Box[T] => {
+          p.fulfill(v);
+        }
+        var _: None => {
+          var r = (mut-view (c._condition)).wait_handle();
+          when (r) {
+            Channel._read(channel, p);
+          };
+        }
+      };
+    }
+  }
+
+  read(channel: cown[Channel[T]]): cown[Box[T]] {
+    var p = Promise.create();
+    var r = (mut-view p).wait_handle();
+    Channel._read(channel, p);
+    r
+  }
+}
+
+class Producer[T: iso] {
+  _channel: cown[Channel[T]];
+
+  create(channel: cown[Channel[T]]): Producer[T] & iso {
+    var result = new Producer;
+    result._channel = channel;
+    result
+  }
+
+  produce(self: mut, value: T) {
+    Channel.write(self._channel, value);
+  }
+}
+
+class Consumer[T: iso] {
+  _channel: cown[Channel[T]];
+
+  create(channel: cown[Channel[T]]): Consumer[T] & iso {
+    var result = new Consumer;
+    result._channel = channel;
+    result
+  }
+
+  consume(self: mut) {
+    when(var box = Channel.read(self._channel)) {
+      Builtin.print1("Hello, {:#}\n", box);
+    }
+  }
+}
+
+class Main {
+  main() {
+    var channel = Channel.create();
+
+    var p = Producer.create(channel);
+    var c = Consumer.create(channel);
+
+    when() {
+      (mut-view p).produce(U64Obj.create(0));
+      (mut-view p).produce(U64Obj.create(1));
+      (mut-view p).produce(U64Obj.create(2));
+      (mut-view p).produce(U64Obj.create(3));
+    };
+
+    when() {
+      (mut-view c).consume();
+      (mut-view c).consume();
+      (mut-view c).consume();
+      (mut-view c).consume();
+    };
+  }
+}

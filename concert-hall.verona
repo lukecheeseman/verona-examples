@@ -1,0 +1,87 @@
+class Seat {
+  _reserved: U64;
+
+  create(): Seat & iso {
+    var result = new Seat;
+    result._reserved = 0;
+    result
+  }
+
+  reserve(self: mut): U64 {
+    1 - (self._reserved = 1)
+  }
+
+}
+
+class CentralComputer {
+  _s1: Seat & iso;
+  _s2: Seat & iso;
+  _s3: Seat & iso;
+
+  create(): cown[CentralComputer] {
+    var result = new CentralComputer;
+    result._s1 = Seat.create();
+    result._s2 = Seat.create();
+    result._s3 = Seat.create();
+    cown(result)
+  }
+
+  reserve(self: mut, seat: U64): U64 {
+    if seat == 1 {
+      (mut-view (self._s1)).reserve()
+    } else {
+      if seat == 2{
+        (mut-view (self._s2)).reserve()
+      } else {
+        if seat == 3 {
+          (mut-view (self._s3)).reserve()
+        } else {
+           0
+        }
+      }
+    }
+  }
+}
+
+class Terminal {
+  _computer: cown[CentralComputer];
+  _id: U64;
+
+  create(id: U64, computer: cown[CentralComputer]): Terminal & iso {
+    var result = new Terminal;
+    result._computer = computer;
+    result._id = id;
+    result
+  }
+
+  reserve(self: mut, seat: U64) {
+    var tid = self._id;
+    when (var c = self._computer) {
+      if ((mut-view c).reserve(seat)) {
+        Builtin.print2("Terminal {:#} reserved {:#}\n", tid, seat);
+      } else {
+        Builtin.print2("Terminal {:#} failed to reserved {:#}\n", tid, seat);
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var cc = CentralComputer.create();
+    var t1 = Terminal.create(1, cc);
+    var t2 = Terminal.create(2, cc);
+
+    when() {
+      (mut-view t1).reserve(1);
+      (mut-view t1).reserve(2);
+      (mut-view t1).reserve(3);
+    };
+
+    when() {
+      (mut-view t2).reserve(3);
+      (mut-view t2).reserve(2);
+      (mut-view t2).reserve(1);
+    };
+  }
+}

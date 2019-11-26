@@ -1,0 +1,97 @@
+class CarParkControl {
+  _count: U64;
+  _capacity: U64;
+  _condition: Promise[None] & iso;
+
+  create(capacity: U64): CarParkControl & iso {
+    var result = new CarParkControl;
+    result._count = 0;
+    result._capacity = capacity;
+    result._condition = Promise.create();
+    result
+  }
+
+  arrive(control: cown[CarParkControl]) {
+    when (var c = control) {
+      if (c._count) == (c._capacity) {
+        var r = (mut-view (c._condition)).wait_handle();
+        when (r) {
+          CarParkControl.arrive(control);
+        }
+      } else {
+        c._count = c._count + 1;
+        Builtin.print1("+: {:#}\n", c._count);
+        var notify = (c._condition = Promise.create());
+        notify.fulfill(new None);
+      };
+    }
+  }
+
+  depart(control: cown[CarParkControl]) {
+    when (var c = control) {
+      if (c._count) == 0 {
+        var r = (mut-view (c._condition)).wait_handle();
+        when (r) {
+          CarParkControl.depart(control);
+        }
+      } else {
+        c._count = c._count - 1;
+        Builtin.print1("-: {:#}\n", c._count);
+        var notify = (c._condition = Promise.create());
+        notify.fulfill(new None);
+      };
+    }
+  }
+}
+
+class Arrivals {
+  _control: cown[CarParkControl];
+
+  create(control: cown[CarParkControl]): Arrivals & iso {
+    var result = new Arrivals;
+    result._control = control;
+    result
+  }
+
+  run(self: mut) {
+    var i = 0;
+    while (i < 10) {
+      CarParkControl.arrive(self._control);
+      i = i + 1
+    }
+  }
+}
+
+class Departures {
+  _control: cown[CarParkControl];
+
+  create(control: cown[CarParkControl]): Departures & iso {
+    var result = new Departures;
+    result._control = control;
+    result
+  }
+
+  run(self: mut) {
+    var i = 0;
+    while (i < 10) {
+      CarParkControl.depart(self._control);
+      i = i + 1
+    }
+  }
+}
+
+class Main {
+  main() {
+    var control = cown(CarParkControl.create(2));
+    var arrivals = Arrivals.create(control);
+    var departures = Departures.create(control);
+
+    when () {
+      (mut-view arrivals).run();
+    };
+
+    when() {
+      (mut-view departures).run();
+    }
+  }
+}

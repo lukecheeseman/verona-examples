@@ -1,0 +1,61 @@
+class Counter {
+  _count: U64;
+
+  create(): Counter & iso {
+    var result = new Counter;
+    result._count = 0;
+    result
+  }
+
+  increment(self: mut) {
+    self._count = self._count + 1;
+    Builtin.print1("Counter value: {:#}\n", self._count);
+  }
+
+  count(self: mut): U64 {
+    self._count
+  }
+
+}
+
+class Turnstile {
+  _people: cown[Counter];
+
+  create(people: cown[Counter]): Turnstile & iso {
+    var result = new Turnstile;
+    result._people = people;
+    result
+  }
+
+  run(self: iso) {
+    var i = 0;
+    while (i < 10) {
+      when (var c = self._people) {
+        c.increment()
+      };
+      i = i + 1
+    }
+  }
+}
+
+class Garden {
+  go() {
+    var counter = cown(Counter.create());
+    var east = Turnstile.create(counter);
+    var west = Turnstile.create(counter);
+
+    when () {
+      east.run();
+    };
+
+    when () {
+      west.run();
+    };
+  }
+}
+
+class Main {
+  main() {
+    Garden.go()
+  }
+}
