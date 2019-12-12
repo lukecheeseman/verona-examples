@@ -1,0 +1,263 @@
+class Node[Value]
+{
+  value: (iso & Value) | (None & imm);
+  next: (Node[Value] & mut) | (None & imm);
+}
+
+class List[Value]
+{
+  hd: Node[Value] & mut;
+  tl: Node[Value] & mut;
+  _size: U64;
+  none: None & imm;  // Fix when we have singletons
+
+  create(): List[Value] & iso
+  {
+    var q = new List;
+    var n = new Node in q;
+    q.hd = n;
+    q.tl = n;
+    q._size = 0;
+    q.none = freeze (new None);
+    n.next = q.none;
+    n.value = q.none;
+    q
+  }
+
+  push_back(self: mut, v: iso & Value)
+  {
+    var n_tail = new Node in self;
+    n_tail.next = self.none;
+    n_tail.value = self.none;
+
+    var old_tl = self.tl;
+    old_tl.value = v;
+    old_tl.next = n_tail;
+    self.tl = n_tail;
+
+    self._size = self._size + 1;
+  }
+
+  push_front(self: mut, v: iso & Value)
+  {
+    var n_hd = new Node in self;
+    n_hd.next = self.hd;
+    n_hd.value = v;
+    self.hd = n_hd;
+
+    self._size = self._size + 1;
+  }
+
+  pop_front(self: mut): (iso & Value) | (None & imm)
+  {
+    var h = self.hd;
+    match (h.value = self.none)
+    {
+      var a: None => a,
+      var v: Value =>
+      {
+        match (h.next)
+        {
+          var a: None => self.none, // Should be unreachable, but not enforced by type system.
+          var b: Node[Value] =>
+          {
+            self.hd = b;
+            self._size = self._size - 1;
+            v
+          }
+        }
+      }
+    }
+  }
+
+  _pop_n_into(self: mut, n: U64, sub: List[Value] & iso): (List[Value] & iso) {
+    if (n == 0) {
+      sub
+    } else {
+      match ((self.hd).next)
+      {
+        var _: None => sub, /* should not be possible by preconditions */
+        var next: Node[Value] =>
+        {
+          var oldnode = (self.hd = next);
+          var mutsub = mut-view sub;
+
+          var n_tail = new Node in mutsub;
+          n_tail.next = mutsub.none;
+          n_tail.value = mutsub.none;
+
+          var old_tl = mutsub.tl;
+          old_tl.value = (mut-view oldnode).value;
+          old_tl.next = n_tail;
+          self.tl = n_tail;
+
+          self._size = self._size - 1;
+          (mut-view sub)._size = (mut-view sub)._size + 1;
+
+          self._pop_n_into(n - 1, sub)
+        }
+      }
+    }
+  }
+
+  pop_n(self: mut, n: U64): (List[Value] & iso) | (None & imm) {
+    if (self._size) > n {
+      self._pop_n_into(n, List.create())
+    } else {
+      self.none
+    }
+  }
+
+  size(self: mut): U64 {
+    self._size
+  }
+}
+
+class Request[T] {
+  _promise: Promise[Group[T]] & iso;
+  _n: U64;
+
+  create(promise: Promise[Group[T]] & iso, n: U64): Request[T] & iso {
+    var result = new Request;
+    result._promise = promise;
+    result._n = n;
+    result
+  }
+
+  promise(self: iso): Promise[Group[T]] & iso {
+    self._promise
+  }
+}
+
+class Cell[T] {
+  _data: T;
+
+  create(data: T): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
+    result
+  }
+
+  data(self: iso): T {
+    self._data
+  }
+}
+
+class Group[T] {
+  _capacity: U64;
+  _resources: List[Cell[T]] & iso;
+  _requests: List[Request[T]] & iso;
+
+  create(): cown[Group[T]] {
+    var result = new Group;
+    result._resources = List.create();
+    result._requests = List.create();
+    cown(result)
+  }
+
+  request(group: cown[Group[T]], n: U64): cown[Group[T]] {
+    var p = Promise.create();
+    var r = (mut-view p).wait_handle();
+    when (group) {
+      var r = Request.create(p, n);
+      (mut-view (group._requests)).push_back(r);
+      group._check_requests();
+    };
+    r
+  }
+
+  _check_requests(self: mut) {
+    match ((mut-view (self._requests)).pop_front()) {
+      var _: None => {}
+      var r: Request[T] => {
+        match ((mut-view (self._resources)).pop_n(r._n)) {
+          var _: None => (mut-view (self._requests)).push_front(r),
+          var sublist: List[Cell[T]] => {
+            var subgroup = new Group;
+            subgroup._resources = sublist ;
+            subgroup._requests = List.create();
+            (r.promise()).fulfill(subgroup);
+          }
+        }
+      }
+    }
+  }
+
+  add(group: cown[Group[T]], resource: T & iso) {
+    when (group) {
+      (mut-view (group._resources)).push_back(Cell.create(resource));
+      group._check_requests();
+    };
+  }
+
+  return(group: cown[Group[T]], rs: List[T] & iso) {
+    when (group) {
+      match ((mut-view rs).pop_front()) {
+        var _: None => {}
+        var e: T => {
+//            (mut-view (self._resources)).push_back(e);
+//          group._add_t(e);
+        }
+      };
+    }
+  }
+}
+
+class A {
+  _id: U64;
+  _counter: U64;
+
+  create(id: U64): A & iso {
+    var result = new A;
+    result._counter = 0;
+    result._id = id;
+    result
+  }
+
+  increment(self: mut) {
+    self._counter = self._counter + 1;
+  }
+}
+
+class Main {
+  main() {
+    var g = Group.create();
+
+    Group.add(g, A.create(0));
+    Group.add(g, A.create(1));
+    Group.add(g, A.create(2));
+    Group.add(g, A.create(3));
+    Group.add(g, A.create(4));
+    Group.add(g, A.create(5));
+    Group.add(g, A.create(6));
+    Group.add(g, A.create(7));
+    Group.add(g, A.create(8));
+    Group.add(g, A.create(9));
+
+    when (var three = Group.request(g, 3)) {
+      Builtin.print("Hi\n");
+      Builtin.print1("I got {:#}\n", three);
+    };
+
+    /*
+    var l = List.create();
+    (mut-view l).push_back(U64Obj.create(1));
+    (mut-view l).push_back(U64Obj.create(2));
+    (mut-view l).push_back(U64Obj.create(3));
+    (mut-view l).push_back(U64Obj.create(4));
+    (mut-view l).push_back(U64Obj.create(5));
+
+    Builtin.print1("l: {:#}\n", (mut-view l));
+
+    var sub = (mut-view l).pop_n(2);
+
+    Builtin.print1("l: {:#}\n", (mut-view l));
+
+    match (sub) {
+      var _: None => Builtin.print("Failed to create sublist\n"),
+      var sl: List[U64Obj & iso] => Builtin.print1("l.pop_n(2): {:#}\n", (mut-view sl)),
+    }
+    */
+
+  }
+}
