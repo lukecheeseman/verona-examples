@@ -66,6 +66,10 @@ class Grouper[T] {
     }
   }
 
+  get(self: mut): List[Cell[T]] & mut {
+    mut-view (self._resources)
+  }
+
   final(self: mut) {
     self._return_resources();
   }
@@ -93,7 +97,8 @@ class Group[T] {
   return(group: cown[Group[T]], cell: Cell[T] & iso) {
     when (group) {
       (mut-view (group._resources)).push_back(cell)
-    }
+    };
+    Group._check_requests(group);
   }
 
   /*
@@ -116,7 +121,13 @@ class Group[T] {
     when (var g = group) {
       match ((mut-view (g._requests)).pop_front()) {
         var _: None => {}
-        var r: Request[T] => r.fulfill(g._take_n(r._n, Grouper.create(group))),
+        var r: Request[T] => {
+          if (r._n <= ((mut-view (g._resources)).size())) {
+            r.fulfill(g._take_n(r._n, Grouper.create(group)))
+          } else {
+            (mut-view (g._requests)).push_front(r)
+          }
+        }
       }
     }
   }
@@ -145,7 +156,19 @@ class Main {
     Group.add(g, "Wassup");
 
     when (var sub = Group.request(g, 2)) {
-      Builtin.print1("Request fulfilled {:#}\n", sub);
-    }
+      Builtin.print1("Resources: {:#}\n", sub);
+    };
+
+    when (var sub = Group.request(g, 1)) {
+      Builtin.print1("Resources: {:#}\n", sub);
+    };
+
+    when (var sub = Group.request(g, 2)) {
+      Builtin.print1("Resources: {:#}\n", sub);
+    };
+
+    when (var sub = Group.request(g, 3)) {
+      Builtin.print1("Resources: {:#}\n", sub);
+    };
   }
 }
