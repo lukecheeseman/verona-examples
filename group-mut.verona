@@ -1,0 +1,151 @@
+use "list.verona"
+
+/*
+ * Data structure for tracking a request holds an internal promise to be
+ * fulfilled and the number of resources requested (_n).
+ */
+class Request[T] {
+  _promise: (Promise[Grouper[T]] & iso) | (None & imm);
+  _n: U64;
+
+  create(promise: Promise[Grouper[T]] & iso, n: U64): Request[T] & iso {
+    var result = new Request;
+    result._promise = promise;
+    result._n = n;
+    result
+  }
+
+  fulfill(self: iso, g: Grouper[T] & iso) {
+    match (self._promise = freeze (new None)) {
+      var _: None => {}
+      var p: Promise[Grouper[T]] => p.fulfill(g),
+    }
+  }
+}
+
+/*
+ * A wrapper around some data so that a resource can be used to fulfill
+ * a promise, regardless of the resources capbability
+ */
+class Cell[T] {
+  _data: T;
+
+  create(data: T): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
+    result
+  }
+
+  data(self: iso): T {
+    self._data
+  }
+}
+
+class Grouper[T] {
+  _group: cown[Group[T]];
+  _resources: List[Cell[T]] & iso;
+
+  create(group: cown[Group[T]]): Grouper[T] & iso {
+    var result = new Grouper;
+    result._group = group;
+    result._resources = List.create();
+    result
+  }
+
+  add(self: mut, resource: Cell[T] & iso) {
+    (mut-view (self._resources)).push_back(resource)
+  }
+
+  _return_resources(self: mut) {
+    match (mut-view (self._resources)).pop_front() {
+      var _: None => {} /* finished returning resources */
+      var c: Cell[T] => {
+        Group.return(self._group, c);
+        self._return_resources();
+      }
+    }
+  }
+
+  final(self: mut) {
+    self._return_resources();
+  }
+}
+
+class Group[T] {
+  _capacity: U64;
+  _resources: List[Cell[T]] & iso;
+  _requests: List[Request[T]] & iso;
+
+  create(): cown[Group[T]] {
+    var result = new Group;
+    result._resources = List.create();
+    result._requests = List.create();
+    cown(result)
+  }
+
+  add(group: cown[Group[T]], resource: T) {
+    var cell = Cell.create(resource);
+    when (group) {
+      (mut-view (group._resources)).push_back(cell)
+    }
+  }
+
+  return(group: cown[Group[T]], cell: Cell[T] & iso) {
+    when (group) {
+      (mut-view (group._resources)).push_back(cell)
+    }
+  }
+
+  /*
+   * collect n resources into the grouper
+   */
+  _take_n(self: mut, n: U64, grouper: Grouper[T] & iso): Grouper[T] & iso {
+    if (n > 0) {
+      var resource = (mut-view (self._resources)).pop_front();
+      match resource {
+        var _: None => {} /* impossible */
+        var c: Cell[T] => (mut-view grouper).add(c),
+      };
+      self._take_n(n - 1, grouper)
+    } else {
+      grouper
+    }
+  }
+
+  _check_requests(group: cown[Group[T]]) {
+    when (var g = group) {
+      match ((mut-view (g._requests)).pop_front()) {
+        var _: None => {}
+        var r: Request[T] => r.fulfill(g._take_n(r._n, Grouper.create(group))),
+      }
+    }
+  }
+
+  /*
+   * request n resources from group
+   * returning a promise for when resources are available
+   */
+  request(group: cown[Group[T]], n: U64): cown[Grouper[T]] {
+    var p = Promise.create();
+    var r = (mut-view p).wait_handle();
+    when (var g = group) {
+      var r = Request.create(p, n);
+      (mut-view (g._requests)).push_back(r);
+      Group._check_requests(group);
+    };
+    r
+  }
+}
+
+class Main {
+  main() {
+    var g = Group.create();
+    Group.add(g, "Hello");
+    Group.add(g, "World");
+    Group.add(g, "Wassup");
+
+    when (var sub = Group.request(g, 2)) {
+      Builtin.print1("Request fulfilled {:#}\n", sub);
+    }
+  }
+}
