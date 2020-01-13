@@ -1,0 +1,76 @@
+class Node[Value]
+{
+  value: (iso & Value) | (None & imm);
+  next: (Node[Value] & mut) | (None & imm);
+}
+
+class List[Value]
+{
+  hd: Node[Value] & mut;
+  tl: Node[Value] & mut;
+  _size: U64;
+  none: None & imm;  // Fix when we have singletons
+
+  create(): List[Value] & iso
+  {
+    var q = new List;
+    var n = new Node in q;
+    q.hd = n;
+    q.tl = n;
+    q._size = 0;
+    q.none = freeze (new None);
+    n.next = q.none;
+    n.value = q.none;
+    q
+  }
+
+  push_back(self: mut, v: iso & Value)
+  {
+    var n_tail = new Node in self;
+    n_tail.next = self.none;
+    n_tail.value = self.none;
+
+    var old_tl = self.tl;
+    old_tl.value = v;
+    old_tl.next = n_tail;
+    self.tl = n_tail;
+
+    self._size = self._size + 1;
+  }
+
+  push_front(self: mut, v: iso & Value)
+  {
+    var n_hd = new Node in self;
+    n_hd.next = self.hd;
+    n_hd.value = v;
+    self.hd = n_hd;
+
+    self._size = self._size + 1;
+  }
+
+  pop_front(self: mut): (iso & Value) | (None & imm)
+  {
+    var h = self.hd;
+    match (h.value = self.none)
+    {
+      var a: None => a,
+      var v: Value =>
+      {
+        match (h.next)
+        {
+          var a: None => self.none, // Should be unreachable, but not enforced by type system.
+          var b: Node[Value] =>
+          {
+            self.hd = b;
+            self._size = self._size - 1;
+            v
+          }
+        }
+      }
+    }
+  }
+
+  size(self: mut): U64 {
+    self._size
+  }
+}

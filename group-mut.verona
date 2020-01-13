@@ -28,7 +28,7 @@ class Request[T] {
  * a promise, regardless of the resources capbability
  */
 class Cell[T] {
-  _data: T;
+  _data: T | (None & imm);
 
   create(data: T): Cell[T] & iso {
     var result = new Cell;
@@ -36,8 +36,12 @@ class Cell[T] {
     result
   }
 
-  data(self: iso): T {
-    self._data
+  read(self: mut): T | (None & imm) {
+    self._data = freeze (new None)
+  }
+
+  write(self: mut, data: T): T | (None & imm) {
+    self._data = data
   }
 }
 
@@ -66,6 +70,7 @@ class Grouper[T] {
     }
   }
 
+  /* TODO: only a view of the contents should be provided? */
   get(self: mut): List[Cell[T]] & mut {
     mut-view (self._resources)
   }
@@ -76,7 +81,6 @@ class Grouper[T] {
 }
 
 class Group[T] {
-  _capacity: U64;
   _resources: List[Cell[T]] & iso;
   _requests: List[Request[T]] & iso;
 
@@ -151,23 +155,36 @@ class Group[T] {
 class Main {
   main() {
     var g = Group.create();
-    Group.add(g, "Hello");
-    Group.add(g, "World");
-    Group.add(g, "Wassup");
+    Group.add(g, U64Obj.create(1));
+    Group.add(g, U64Obj.create(2));
+    Group.add(g, U64Obj.create(3));
 
     when (var sub = Group.request(g, 2)) {
-      Builtin.print1("Resources: {:#}\n", sub);
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
     when (var sub = Group.request(g, 1)) {
-      Builtin.print1("Resources: {:#}\n", sub);
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
     when (var sub = Group.request(g, 2)) {
-      Builtin.print1("Resources: {:#}\n", sub);
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
     when (var sub = Group.request(g, 3)) {
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
+      var r = sub.get();
+      Builtin.print1("r: {:#}\n", r);
+      var e = r.pop_front();
+      match e {
+        var _: None => Builtin.print("None?\n"),
+        var c: Cell[U64Obj & iso] => {
+          Builtin.print1("Contents: {:#}\n", (mut-view c).read());
+        }
+      };
+    };
+
+    when (var sub = Group.request(g, 2)) {
       Builtin.print1("Resources: {:#}\n", sub);
     };
   }
