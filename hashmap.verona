@@ -1,0 +1,129 @@
+use "list.verona"
+
+interface Hash[T] {
+  hash(o: T): U64;
+}
+
+class Pair[P, Q]{
+  _fst: P;
+  _snd: Q;
+
+  create(fst: P, snd: Q): Pair[P, Q] & iso {
+    var result = new Pair;
+    result._fst = fst;
+    result._snd = snd;
+    result
+  }
+
+  fst(self: mut): P {
+    self._fst
+  }
+
+  snd(self: mut): Q {
+    self._snd
+  }
+}
+
+class U64Hash {
+  hash(o: U64): U64 { o }
+}
+
+class Just[T] {
+  _data: T;
+}
+class Maybe[T] {
+  _data: (Just[T] & iso) | (None & imm);
+
+  none(): Maybe[T] & iso {
+    var result = new Maybe;
+    result._data = None.create();
+    result
+  }
+
+  just(data: T): Maybe[T] & iso {
+    var result = new Maybe;
+    var just = new Just;
+    just._data = data;
+    result._data = just;
+    result
+  }
+}
+
+class HashMap {
+  _bucket0: cown[List[Pair[U64, String]]];
+  _bucket1: cown[List[Pair[U64, String]]];
+  _bucket2: cown[List[Pair[U64, String]]];
+  _bucket3: cown[List[Pair[U64, String]]];
+  _hasher: Hash[U64];
+
+  create(): cown[HashMap] {
+    var result = new HashMap;
+    result._bucket0 = cown(List.create());
+    result._bucket1 = cown(List.create());
+    result._bucket2 = cown(List.create());
+    result._bucket3 = cown(List.create());
+    result._hasher = new U64Hash;
+    cown(result)
+  }
+
+  _bucket(self: mut, key: U64): cown[List[Pair[U64, String]]] {
+    var bucket_id = 1;
+    if (bucket_id == 0) {
+      self._bucket0
+    } else { if (bucket_id == 1) {
+      self._bucket1
+    } else { if (bucket_id == 2 ) {
+      self._bucket2
+    } else { /* bucket_id == 3 */
+      self._bucket3
+    }}}
+  }
+
+  put(map: cown[HashMap], key: U64, value: String) {
+    when (map) {
+      when(var bucket = map._bucket(key)) {
+        bucket.push_back(Pair.create(key, value));
+      }
+    }
+  }
+
+  _search(bucket: List[Pair[U64, String]] & mut, key: U64, p: Promise[Maybe[String]] & iso) {
+    match (bucket.pop_front()) {
+      var _: None => p.fulfill(Maybe.none()),
+      var pair: Pair[U64, String] => {
+        if ((mut-view pair).fst() == key) {
+          p.fulfill(Maybe.just((mut-view pair).snd()))
+        } else {
+          HashMap._search(bucket, key, p);
+        };
+        (mut-view bucket).push_front(pair);
+      }
+    }
+  }
+
+  get(map: cown[HashMap], key: U64): cown[Maybe[String]] {
+    var p = Promise.create();
+    var r = (mut-view p).wait_handle();
+    when(map) {
+      when(var bucket = map._bucket(key)) {
+        HashMap._search(bucket, key, p)
+      };
+    };
+    r
+  }
+}
+
+class Main {
+  main () {
+    var map = HashMap.create();
+    HashMap.put(map, 0, "Hello");
+    HashMap.put(map, 1, "World");
+    HashMap.put(map, 1, "Swish");
+    HashMap.put(map, 2, "Swash");
+    HashMap.put(map, 3, "Gah");
+
+    when (var v = HashMap.get(map, 2)) {
+      Builtin.print1("Found: {:#}\n", v);
+    }
+  }
+}
