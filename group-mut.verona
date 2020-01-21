@@ -158,7 +158,8 @@ class Pool[T] {
   request(group: cown[Pool[T]], n: U64): cown[Group[T]] {
     var p = Promise.create();
     var r = (mut-view p).wait_handle();
-    // SD: the r from above seems to not get used anywhere
+    // SD What is type of r? The type system requires it to 
+    // be the return type of the function...
     when (var g = group) {
       var r = Request.create(p, n);
       (mut-view (g._requests)).push_back(r);
