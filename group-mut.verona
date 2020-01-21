@@ -53,6 +53,7 @@ class Resource[T] {
 
 class Group[T] {
   _group: cown[Pool[T]];
+  // SD" call the above "_pool" instead?
   _resources: List[Resource[T]] & iso;
 
   create(group: cown[Pool[T]]): Group[T] & iso {
