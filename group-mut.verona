@@ -18,11 +18,11 @@ class Request[T] {
 
   fulfill(self: iso, g: Group[T] & iso) {
   // SD: why do we need a Group[T] parameter?
-  //     it does not seem to get used
-    match (self._promise = freeze (new None)) {
+     match (self._promise = freeze (new None)) {
     // SD: the assigment to self.promise seems like an ugly idiom
     //     I wonder whether it can be avoided
       var _: None => {}
+      // SD Why is the below not "p.fullfill(somehow_get_the_group_out_of_p)"
       var p: Promise[Group[T]] => p.fulfill(g),
     }
   }
