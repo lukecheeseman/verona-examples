@@ -1,5 +1,6 @@
 use "list.verona"
 
+
 /*
  * Data structure for tracking a request holds an internal promise to be
  * fulfilled and the number of resources requested (_n).
@@ -16,7 +17,11 @@ class Request[T] {
   }
 
   fulfill(self: iso, g: Group[T] & iso) {
+  // SD: why do we need a Group[T] parameter?
+  //     it does not seem to get used
     match (self._promise = freeze (new None)) {
+    // SD: the assigment to self.promise seems like an ugly idiom
+    //     I wonder whether it can be avoided
       var _: None => {}
       var p: Promise[Group[T]] => p.fulfill(g),
     }
@@ -25,7 +30,7 @@ class Request[T] {
 
 /*
  * A wrapper around some data so that a resource can be used to fulfill
- * a promise, regardless of the resources capbability
+ * a promise, regardless of the resource's capbability
  */
 class Resource[T] {
   _data: (T & iso) | (None & imm);
@@ -36,7 +41,8 @@ class Resource[T] {
     result
   }
 
-  read(self: mut): (T & iso) | (None & imm) {
+  // SD: I think this function shoid be called "extract"
+ read(self: mut): (T & iso) | (None & imm) {
     self._data = freeze (new None)
   }
 
@@ -80,6 +86,9 @@ class Group[T] {
   }
 }
 
+// SD: can a T belong to more than one pool?
+// type system seems to forbid it, since the class Resource
+// has a field  "_data: (T & iso) | (None & imm);"
 class Pool[T] {
   _resources: List[Resource[T]] & iso;
   _requests: List[Request[T]] & iso;
@@ -91,6 +100,7 @@ class Pool[T] {
     cown(result)
   }
 
+  // SD: Should "group" below be "self"?
   add(group: cown[Pool[T]], resource: T & iso) {
     var cell = Resource.create(resource);
     when (group) {
@@ -98,6 +108,7 @@ class Pool[T] {
     }
   }
 
+  // SD: Should "return" below be "release"?
   return(group: cown[Pool[T]], cell: Resource[T] & iso) {
     when (group) {
       (mut-view (group._resources)).push_back(cell)
@@ -108,6 +119,8 @@ class Pool[T] {
   /*
    * collect n resources into the grouper
    */
+  // SD 
+  // PRE: n<= card(self._resources) 
   _take_n(self: mut, n: U64, grouper: Group[T] & iso): Group[T] & iso {
     if (n > 0) {
       var resource = (mut-view (self._resources)).pop_front();
@@ -130,7 +143,7 @@ class Pool[T] {
             r.fulfill(g._take_n(r._n, Group.create(group)))
           } else {
             (mut-view (g._requests)).push_front(r)
-          }
+            }
         }
       }
     }
@@ -140,13 +153,17 @@ class Pool[T] {
    * request n resources from pool
    * returning a promise for when resources are available
    */
+  // SD: is cown[Group[T]] a promise?
   request(group: cown[Pool[T]], n: U64): cown[Group[T]] {
     var p = Promise.create();
     var r = (mut-view p).wait_handle();
+    // SD: the r from above seems to not get used anywhere
     when (var g = group) {
       var r = Request.create(p, n);
       (mut-view (g._requests)).push_back(r);
       Pool._check_requests(group);
+      // SD the function _check_requests seems to only check the top
+      //    request. I woul have expected it to be recursive
     };
     r
   }
