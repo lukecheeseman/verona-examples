@@ -1,24 +1,27 @@
 use "list.verona"
 
-
 /*
  * Data structure for tracking a request holds an internal promise to be
  * fulfilled and the number of resources requested (_n).
  */
 class Request[T] {
   _promise: (Promise[Group[T]] & iso) | (None & imm);
-  _n: U64;
+  _n: U64 & imm;
 
-  create(promise: Promise[Group[T]] & iso, n: U64): Request[T] & iso {
+  create(promise: Promise[Group[T]] & iso, n: U64 & imm): Request[T] & iso {
     var result = new Request;
     result._promise = promise;
     result._n = n;
     result
   }
 
+  enough(self: mut, amount: U64 & imm): U64 & imm {
+    self._n <= amount
+  }
+
   fulfill(self: iso, g: Group[T] & iso) {
-  // SD: why do we need a Group[T] parameter?
-     match (self._promise = freeze (new None)) {
+    // SD: why do we need a Group[T] parameter?
+    match (self._promise = Builtin.freeze(new None)) {
     // SD: the assigment to self.promise seems like an ugly idiom
     //     I wonder whether it can be avoided
       var _: None => {}
@@ -32,18 +35,18 @@ class Request[T] {
  * A wrapper around some data so that a resource can be used to fulfill
  * a promise, regardless of the resource's capbability
  */
-class Resource[T] {
+class Cell[T] {
   _data: (T & iso) | (None & imm);
 
-  create(data: T & iso): Resource[T] & iso {
-    var result = new Resource;
+  create(data: T & iso): Cell[T] & iso {
+    var result = new Cell;
     result._data = data;
     result
   }
 
   // SD: I think this function shoid be called "extract"
- read(self: mut): (T & iso) | (None & imm) {
-    self._data = freeze (new None)
+ extract(self: mut): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
   }
 
   write(self: mut, data: T & iso): (T & iso) | (None & imm) {
@@ -52,33 +55,32 @@ class Resource[T] {
 }
 
 class Group[T] {
-  _group: cown[Pool[T]];
-  // SD" call the above "_pool" instead?
-  _resources: List[Resource[T]] & iso;
+  _pool: cown[Pool[T]] & imm;
+  _resources: List[Cell[T]] & iso;
 
-  create(group: cown[Pool[T]]): Group[T] & iso {
+  create(pool: cown[Pool[T]] & imm): Group[T] & iso {
     var result = new Group;
-    result._group = group;
+    result._pool = pool;
     result._resources = List.create();
     result
   }
 
-  add(self: mut, resource: Resource[T] & iso) {
+  add(self: mut, resource: Cell[T] & iso) {
     (mut-view (self._resources)).push_back(resource)
   }
 
   _return_resources(self: mut) {
     match (mut-view (self._resources)).pop_front() {
       var _: None => {} /* finished returning resources */
-      var c: Resource[T] => {
-        Pool.return(self._group, c);
+      var c: Cell[T] => {
+        Pool.return(self._pool, c);
         self._return_resources();
       }
     }
   }
 
   /* TODO: only a view of the contents should be provided? */
-  get(self: mut): List[Resource[T]] & mut {
+  get(self: mut): List[Cell[T]] & mut {
     mut-view (self._resources)
   }
 
@@ -88,62 +90,61 @@ class Group[T] {
 }
 
 // SD: can a T belong to more than one pool?
-// type system seems to forbid it, since the class Resource
+// type system seems to forbid it, since the class Cell
 // has a field  "_data: (T & iso) | (None & imm);"
 class Pool[T] {
-  _resources: List[Resource[T]] & iso;
+  _resources: List[Cell[T]] & iso;
   _requests: List[Request[T]] & iso;
 
-  create(): cown[Pool[T]] {
+  create(): cown[Pool[T]] & imm {
     var result = new Pool;
     result._resources = List.create();
     result._requests = List.create();
-    cown(result)
+    cown.create(result)
   }
 
-  // SD: Should "group" below be "self"?
-  add(group: cown[Pool[T]], resource: T & iso) {
-    var cell = Resource.create(resource);
-    when (group) {
-      (mut-view (group._resources)).push_back(cell)
+  add(pool: cown[Pool[T]] & imm, resource: T & iso) {
+    var cell = Cell.create(resource);
+    when (pool) {
+      (mut-view (pool._resources)).push_back(cell)
     }
   }
 
   // SD: Should "return" below be "release"?
-  return(group: cown[Pool[T]], cell: Resource[T] & iso) {
-    when (group) {
-      (mut-view (group._resources)).push_back(cell)
+  return(pool: cown[Pool[T]] & imm, cell: Cell[T] & iso) {
+    when (pool) {
+      (mut-view (pool._resources)).push_back(cell)
     };
-    Pool._check_requests(group);
+    Pool._check_requests(pool);
   }
 
   /*
    * collect n resources into the grouper
    */
-  // SD 
-  // PRE: n<= card(self._resources) 
-  _take_n(self: mut, n: U64, grouper: Group[T] & iso): Group[T] & iso {
+  // SD
+  // PRE: n<= card(self._resources)
+  _take_n(self: mut, n: U64 & imm, group: Group[T] & iso): Group[T] & iso {
     if (n > 0) {
       var resource = (mut-view (self._resources)).pop_front();
       match resource {
         var _: None => {} /* impossible */
-        var c: Resource[T] => (mut-view grouper).add(c),
+        var c: Cell[T] => (mut-view group).add(c),
       };
-      self._take_n(n - 1, grouper)
+      self._take_n(n - 1, group)
     } else {
-      grouper
+      group
     }
   }
 
-  _check_requests(group: cown[Pool[T]]) {
-    when (var g = group) {
-      match ((mut-view (g._requests)).pop_front()) {
+  _check_requests(pool: cown[Pool[T]] & imm) {
+    when (var p = pool) {
+      match ((mut-view (p._requests)).pop_front()) {
         var _: None => {}
         var r: Request[T] => {
-          if (r._n <= ((mut-view (g._resources)).size())) {
-            r.fulfill(g._take_n(r._n, Group.create(group)))
+          if (r._n <= ((mut-view (p._resources)).size())) {
+            r.fulfill(p._take_n(r._n, Group.create(pool)))
           } else {
-            (mut-view (g._requests)).push_front(r)
+            (mut-view (p._requests)).push_front(r)
             }
         }
       }
@@ -155,15 +156,15 @@ class Pool[T] {
    * returning a promise for when resources are available
    */
   // SD: is cown[Group[T]] a promise?
-  request(group: cown[Pool[T]], n: U64): cown[Group[T]] {
+  request(pool: cown[Pool[T]] & imm, n: U64 & imm): cown[Group[T]] & imm {
     var p = Promise.create();
     var r = (mut-view p).wait_handle();
-    // SD What is type of r? The type system requires it to 
+    // SD What is type of r? The type system requires it to
     // be the return type of the function...
-    when (var g = group) {
+    when (var pl = pool) {
       var r = Request.create(p, n);
-      (mut-view (g._requests)).push_back(r);
-      Pool._check_requests(group);
+      (mut-view (pl._requests)).push_back(r);
+      Pool._check_requests(pool);
       // SD the function _check_requests seems to only check the top
       //    request. I woul have expected it to be recursive
     };
@@ -173,15 +174,16 @@ class Pool[T] {
 
 class Main {
   main() {
-    var g = Pool.create();
-    Pool.add(g, U64Obj.create(1));
-    Pool.add(g, U64Obj.create(2));
-    Pool.add(g, U64Obj.create(3));
+    var p = Pool.create();
+    Pool.add(p, U64Obj.create(1));
+    Pool.add(p, U64Obj.create(2));
+    Pool.add(p, U64Obj.create(3));
 
-    when (var sub = Pool.request(g, 2)) {
+    when (var sub = Pool.request(p, 2)) {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
+    /*
     when (var sub = Pool.request(g, 1)) {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
@@ -206,5 +208,6 @@ class Main {
     when (var sub = Pool.request(g, 2)) {
       Builtin.print1("Resources: {:#}\n", sub);
     };
+    */
   }
 }

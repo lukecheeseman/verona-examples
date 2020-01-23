@@ -8,7 +8,7 @@ class List[Value]
 {
   hd: Node[Value] & mut;
   tl: Node[Value] & mut;
-  _size: U64;
+  _size: U64 & imm;
   none: None & imm;  // Fix when we have singletons
 
   create(): List[Value] & iso
@@ -18,7 +18,7 @@ class List[Value]
     q.hd = n;
     q.tl = n;
     q._size = 0;
-    q.none = freeze (new None);
+    q.none = Builtin.freeze(new None);
     n.next = q.none;
     n.value = q.none;
     q
@@ -70,7 +70,7 @@ class List[Value]
     }
   }
 
-  size(self: mut): U64 {
+  size(self: mut): U64 & imm {
     self._size
   }
 }
