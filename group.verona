@@ -1,263 +1,206 @@
-class Node[Value]
-{
-  value: (iso & Value) | (None & imm);
-  next: (Node[Value] & mut) | (None & imm);
-}
+use "list.verona"
 
-class List[Value]
-{
-  hd: Node[Value] & mut;
-  tl: Node[Value] & mut;
-  _size: U64;
-  none: None & imm;  // Fix when we have singletons
-
-  create(): List[Value] & iso
-  {
-    var q = new List;
-    var n = new Node in q;
-    q.hd = n;
-    q.tl = n;
-    q._size = 0;
-    q.none = freeze (new None);
-    n.next = q.none;
-    n.value = q.none;
-    q
-  }
-
-  push_back(self: mut, v: iso & Value)
-  {
-    var n_tail = new Node in self;
-    n_tail.next = self.none;
-    n_tail.value = self.none;
-
-    var old_tl = self.tl;
-    old_tl.value = v;
-    old_tl.next = n_tail;
-    self.tl = n_tail;
-
-    self._size = self._size + 1;
-  }
-
-  push_front(self: mut, v: iso & Value)
-  {
-    var n_hd = new Node in self;
-    n_hd.next = self.hd;
-    n_hd.value = v;
-    self.hd = n_hd;
-
-    self._size = self._size + 1;
-  }
-
-  pop_front(self: mut): (iso & Value) | (None & imm)
-  {
-    var h = self.hd;
-    match (h.value = self.none)
-    {
-      var a: None => a,
-      var v: Value =>
-      {
-        match (h.next)
-        {
-          var a: None => self.none, // Should be unreachable, but not enforced by type system.
-          var b: Node[Value] =>
-          {
-            self.hd = b;
-            self._size = self._size - 1;
-            v
-          }
-        }
-      }
-    }
-  }
-
-  _pop_n_into(self: mut, n: U64, sub: List[Value] & iso): (List[Value] & iso) {
-    if (n == 0) {
-      sub
-    } else {
-      match ((self.hd).next)
-      {
-        var _: None => sub, /* should not be possible by preconditions */
-        var next: Node[Value] =>
-        {
-          var oldnode = (self.hd = next);
-          var mutsub = mut-view sub;
-
-          var n_tail = new Node in mutsub;
-          n_tail.next = mutsub.none;
-          n_tail.value = mutsub.none;
-
-          var old_tl = mutsub.tl;
-          old_tl.value = (mut-view oldnode).value;
-          old_tl.next = n_tail;
-          self.tl = n_tail;
-
-          self._size = self._size - 1;
-          (mut-view sub)._size = (mut-view sub)._size + 1;
-
-          self._pop_n_into(n - 1, sub)
-        }
-      }
-    }
-  }
-
-  pop_n(self: mut, n: U64): (List[Value] & iso) | (None & imm) {
-    if (self._size) > n {
-      self._pop_n_into(n, List.create())
-    } else {
-      self.none
-    }
-  }
-
-  size(self: mut): U64 {
-    self._size
-  }
-}
-
+/*
+ * Data structure for tracking a request holds an internal promise to be
+ * fulfilled and the number of resources requested (_n).
+ */
 class Request[T] {
   _promise: Promise[Group[T]] & iso;
-  _n: U64;
+  _n: U64 & imm;
 
-  create(promise: Promise[Group[T]] & iso, n: U64): Request[T] & iso {
+  create(n: U64 & imm): Request[T] & iso {
     var result = new Request;
-    result._promise = promise;
+    result._promise = Promise.create();
     result._n = n;
     result
   }
 
-  promise(self: iso): Promise[Group[T]] & iso {
-    self._promise
+  await(self: mut): cown[Group[T]] & imm {
+    (mut-view (self._promise)).wait_handle()
+  }
+
+  /*
+   * Fulfill this request by providing a Group[T], this fulfills
+   * the waiting promise.
+   */
+  fulfill(self: iso, g: Group[T] & iso) {
+    (self._promise).fulfill(g);
   }
 }
 
+/*
+ * A wrapper around some data so that a resource can be used to fulfill
+ * a promise, regardless of the resource's capbability
+ */
 class Cell[T] {
-  _data: T;
+  _data: (T & iso) | (None & imm);
 
-  create(data: T): Cell[T] & iso {
+  create(data: T & iso): Cell[T] & iso {
     var result = new Cell;
     result._data = data;
     result
   }
 
-  data(self: iso): T {
-    self._data
+ extract(self: mut): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
+  }
+
+  write(self: mut, data: T & iso): (T & iso) | (None & imm) {
+    self._data = data
   }
 }
 
 class Group[T] {
-  _capacity: U64;
+  _pool: cown[Pool[T]] & imm;
+  _resources: List[Cell[T]] & iso;
+
+  create(pool: cown[Pool[T]] & imm,
+         resources: List[Cell[T]] & iso): Group[T] & iso {
+    var result = new Group;
+    result._pool = pool;
+    result._resources = resources;
+    result
+  }
+
+  /* TODO: only a view of the contents should be provided? */
+  get(self: mut): List[Cell[T]] & mut {
+    mut-view (self._resources)
+  }
+
+  _return_resources(self: mut) {
+    match (mut-view (self._resources)).pop_front() {
+      var _: None => {} /* finished returning resources */
+      var c: Cell[T] => {
+        Pool.return(self._pool, c);
+        self._return_resources();
+      }
+    }
+  }
+
+  /*
+   * Finaliser returns the resources in the Group to their
+   * original Pool
+   */
+  final(self: mut) {
+    self._return_resources();
+  }
+}
+
+// SD: can a T belong to more than one pool?
+// type system seems to forbid it, since the class Cell
+// has a field  "_data: (T & iso) | (None & imm);"
+class Pool[T] {
   _resources: List[Cell[T]] & iso;
   _requests: List[Request[T]] & iso;
 
-  create(): cown[Group[T]] {
-    var result = new Group;
-    result._resources = List.create();
+  create(resources: List[Cell[T]] & iso): cown[Pool[T]] & imm {
+    var result = new Pool;
+    result._resources = resources;
     result._requests = List.create();
-    cown(result)
+    cown.create(result)
   }
 
-  request(group: cown[Group[T]], n: U64): cown[Group[T]] {
-    var p = Promise.create();
-    var r = (mut-view p).wait_handle();
-    when (group) {
-      var r = Request.create(p, n);
-      (mut-view (group._requests)).push_back(r);
-      group._check_requests();
+  return(pool: cown[Pool[T]] & imm, cell: Cell[T] & iso) {
+    when (pool) {
+      (mut-view (pool._resources)).push_back(cell)
     };
-    r
+    Pool._check_requests(pool);
   }
 
-  _check_requests(self: mut) {
-    match ((mut-view (self._requests)).pop_front()) {
-      var _: None => {}
-      var r: Request[T] => {
-        match ((mut-view (self._resources)).pop_n(r._n)) {
-          var _: None => (mut-view (self._requests)).push_front(r),
-          var sublist: List[Cell[T]] => {
-            var subgroup = new Group;
-            subgroup._resources = sublist ;
-            subgroup._requests = List.create();
-            (r.promise()).fulfill(subgroup);
+  /*
+   * Take n resources out of the pool and put the into a list
+   */
+  _take_n(self: mut, n: U64 & imm, rs: List[Cell[T]] & iso)
+          : List[Cell[T]] & iso {
+    if (n > 0) {
+      var resource = (mut-view (self._resources)).pop_front();
+      match resource {
+        // already checked that there are more than n available resources
+        // so the None branch _should_ not be reached.
+        var _: None => {}
+        var c: Cell[T] => (mut-view rs).push_back(c),
+      };
+      self._take_n(n - 1, rs)
+    } else {
+      rs
+    }
+  }
+
+  /*
+   * check the first request in the queue, if it can be satisified then
+   * fulfill the requests and schedule a behaviour to check the next
+   * waiting request.
+   */
+  _check_requests(pool: cown[Pool[T]] & imm) {
+    when (var p = pool) {
+      match ((mut-view (p._requests)).pop_front()) {
+        var _: None => {}
+        var r: Request[T] => {
+          if (r._n <= ((mut-view (p._resources)).size())) {
+            r.fulfill(Group.create(pool, p._take_n(r._n, List.create())));
+            Pool._check_requests(pool);
+          } else {
+            (mut-view (p._requests)).push_front(r);
           }
         }
       }
     }
   }
 
-  add(group: cown[Group[T]], resource: T & iso) {
-    when (group) {
-      (mut-view (group._resources)).push_back(Cell.create(resource));
-      group._check_requests();
+  /*
+   * request n resources from pool
+   * returning a promise of a Group[T] when resources are available.
+   */
+  request(pool: cown[Pool[T]] & imm, n: U64 & imm): cown[Group[T]] & imm {
+    // create a request and schedule a behaviour to add it to the pool,
+    // immediately return a handle for the request.
+    var request = Request.create(n);
+    var handle = (mut-view request).await();
+    when (var p = pool) {
+      (mut-view (p._requests)).push_back(request);
+      Pool._check_requests(pool);
     };
-  }
-
-  return(group: cown[Group[T]], rs: List[T] & iso) {
-    when (group) {
-      match ((mut-view rs).pop_front()) {
-        var _: None => {}
-        var e: T => {
-//            (mut-view (self._resources)).push_back(e);
-//          group._add_t(e);
-        }
-      };
-    }
-  }
-}
-
-class A {
-  _id: U64;
-  _counter: U64;
-
-  create(id: U64): A & iso {
-    var result = new A;
-    result._counter = 0;
-    result._id = id;
-    result
-  }
-
-  increment(self: mut) {
-    self._counter = self._counter + 1;
+    handle
   }
 }
 
 class Main {
   main() {
-    var g = Group.create();
+    var resources = List.create();
+    (mut-view resources).push_back(Cell.create(U64Obj.create(1)));
+    (mut-view resources).push_back(Cell.create(U64Obj.create(2)));
+    (mut-view resources).push_back(Cell.create(U64Obj.create(3)));
+    var p = Pool.create(resources);
 
-    Group.add(g, A.create(0));
-    Group.add(g, A.create(1));
-    Group.add(g, A.create(2));
-    Group.add(g, A.create(3));
-    Group.add(g, A.create(4));
-    Group.add(g, A.create(5));
-    Group.add(g, A.create(6));
-    Group.add(g, A.create(7));
-    Group.add(g, A.create(8));
-    Group.add(g, A.create(9));
+    when (var sub = Pool.request(p, 2)) {
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
+    };
 
-    when (var three = Group.request(g, 3)) {
-      Builtin.print("Hi\n");
-      Builtin.print1("I got {:#}\n", three);
+    when (var sub = Pool.request(p, 1)) {
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
+    };
+
+    when (var sub = Pool.request(p, 2)) {
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
     /*
-    var l = List.create();
-    (mut-view l).push_back(U64Obj.create(1));
-    (mut-view l).push_back(U64Obj.create(2));
-    (mut-view l).push_back(U64Obj.create(3));
-    (mut-view l).push_back(U64Obj.create(4));
-    (mut-view l).push_back(U64Obj.create(5));
+    when (var sub = Pool.request(g, 3)) {
+      Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
+      var r = sub.get();
+      Builtin.print1("r: {:#}\n", r);
+      var e = r.pop_front();
+      match e {
+        var _: None => Builtin.print("None?\n"),
+        var c: Resource[U64Obj & iso] => {
+          Builtin.print1("Contents: {:#}\n", (mut-view c).read());
+        }
+      };
+    };
 
-    Builtin.print1("l: {:#}\n", (mut-view l));
-
-    var sub = (mut-view l).pop_n(2);
-
-    Builtin.print1("l: {:#}\n", (mut-view l));
-
-    match (sub) {
-      var _: None => Builtin.print("Failed to create sublist\n"),
-      var sl: List[U64Obj & iso] => Builtin.print1("l.pop_n(2): {:#}\n", (mut-view sl)),
-    }
+    when (var sub = Pool.request(g, 2)) {
+      Builtin.print1("Resources: {:#}\n", sub);
+    };
     */
-
   }
 }
