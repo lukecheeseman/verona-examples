@@ -5,29 +5,26 @@ use "list.verona"
  * fulfilled and the number of resources requested (_n).
  */
 class Request[T] {
-  _promise: (Promise[Group[T]] & iso) | (None & imm);
+  _promise: Promise[Group[T]] & iso;
   _n: U64 & imm;
 
-  create(promise: Promise[Group[T]] & iso, n: U64 & imm): Request[T] & iso {
+  create(n: U64 & imm): Request[T] & iso {
     var result = new Request;
-    result._promise = promise;
+    result._promise = Promise.create();
     result._n = n;
     result
   }
 
-  enough(self: mut, amount: U64 & imm): U64 & imm {
-    self._n <= amount
+  await(self: mut): cown[Group[T]] & imm {
+    (mut-view (self._promise)).wait_handle()
   }
 
+  /*
+   * Fulfill this request by providing a Group[T], this fulfills
+   * the waiting promise.
+   */
   fulfill(self: iso, g: Group[T] & iso) {
-    // SD: why do we need a Group[T] parameter?
-    match (self._promise = Builtin.freeze(new None)) {
-    // SD: the assigment to self.promise seems like an ugly idiom
-    //     I wonder whether it can be avoided
-      var _: None => {}
-      // SD Why is the below not "p.fullfill(somehow_get_the_group_out_of_p)"
-      var p: Promise[Group[T]] => p.fulfill(g),
-    }
+    (self._promise).fulfill(g);
   }
 }
 
@@ -44,7 +41,6 @@ class Cell[T] {
     result
   }
 
-  // SD: I think this function shoid be called "extract"
  extract(self: mut): (T & iso) | (None & imm) {
     self._data = Builtin.freeze(new None)
   }
@@ -58,15 +54,17 @@ class Group[T] {
   _pool: cown[Pool[T]] & imm;
   _resources: List[Cell[T]] & iso;
 
-  create(pool: cown[Pool[T]] & imm): Group[T] & iso {
+  create(pool: cown[Pool[T]] & imm,
+         resources: List[Cell[T]] & iso): Group[T] & iso {
     var result = new Group;
     result._pool = pool;
-    result._resources = List.create();
+    result._resources = resources;
     result
   }
 
-  add(self: mut, resource: Cell[T] & iso) {
-    (mut-view (self._resources)).push_back(resource)
+  /* TODO: only a view of the contents should be provided? */
+  get(self: mut): List[Cell[T]] & mut {
+    mut-view (self._resources)
   }
 
   _return_resources(self: mut) {
@@ -79,11 +77,10 @@ class Group[T] {
     }
   }
 
-  /* TODO: only a view of the contents should be provided? */
-  get(self: mut): List[Cell[T]] & mut {
-    mut-view (self._resources)
-  }
-
+  /*
+   * Finaliser returns the resources in the Group to their
+   * original Pool
+   */
   final(self: mut) {
     self._return_resources();
   }
@@ -110,12 +107,11 @@ class Pool[T] {
     }
   }
 
-  // SD: Should "return" below be "release"?
   return(pool: cown[Pool[T]] & imm, cell: Cell[T] & iso) {
     when (pool) {
       (mut-view (pool._resources)).push_back(cell)
     };
-    Pool._check_requests(pool);
+    Pool._check_first_request(pool);
   }
 
   /*
@@ -123,29 +119,30 @@ class Pool[T] {
    */
   // SD
   // PRE: n<= card(self._resources)
-  _take_n(self: mut, n: U64 & imm, group: Group[T] & iso): Group[T] & iso {
+  _take_n(self: mut, n: U64 & imm, rs: List[Cell[T]] & iso)
+          : List[Cell[T]] & iso {
     if (n > 0) {
       var resource = (mut-view (self._resources)).pop_front();
       match resource {
         var _: None => {} /* impossible */
-        var c: Cell[T] => (mut-view group).add(c),
+        var c: Cell[T] => (mut-view rs).push_back(c),
       };
-      self._take_n(n - 1, group)
+      self._take_n(n - 1, rs)
     } else {
-      group
+      rs
     }
   }
 
-  _check_requests(pool: cown[Pool[T]] & imm) {
+  _check_first_request(pool: cown[Pool[T]] & imm) {
     when (var p = pool) {
       match ((mut-view (p._requests)).pop_front()) {
         var _: None => {}
         var r: Request[T] => {
           if (r._n <= ((mut-view (p._resources)).size())) {
-            r.fulfill(p._take_n(r._n, Group.create(pool)))
+            r.fulfill(Group.create(pool, p._take_n(r._n, List.create())))
           } else {
             (mut-view (p._requests)).push_front(r)
-            }
+          }
         }
       }
     }
@@ -153,22 +150,18 @@ class Pool[T] {
 
   /*
    * request n resources from pool
-   * returning a promise for when resources are available
+   * returning a promise of a Group[T] when resources are available.
    */
-  // SD: is cown[Group[T]] a promise?
   request(pool: cown[Pool[T]] & imm, n: U64 & imm): cown[Group[T]] & imm {
-    var p = Promise.create();
-    var r = (mut-view p).wait_handle();
-    // SD What is type of r? The type system requires it to
-    // be the return type of the function...
-    when (var pl = pool) {
-      var r = Request.create(p, n);
-      (mut-view (pl._requests)).push_back(r);
-      Pool._check_requests(pool);
-      // SD the function _check_requests seems to only check the top
-      //    request. I woul have expected it to be recursive
+    // create a request and schedule a behaviour to add it to the pool,
+    // immediately return a handle for the request.
+    var request = Request.create(n);
+    var handle = (mut-view request).await();
+    when (var p = pool) {
+      (mut-view (p._requests)).push_back(request);
+      Pool._check_first_request(pool);
     };
-    r
+    handle
   }
 }
 
