@@ -41,7 +41,11 @@ class Cell[T] {
     result
   }
 
- extract(self: mut): (T & iso) | (None & imm) {
+  write(self: mut, data: T & iso): (T & iso) | (None & imm) {
+    self._data = data
+  }
+
+  extract(self: mut): (T & iso) | (None & imm) {
     self._data = Builtin.freeze(new None)
   }
 }
@@ -58,9 +62,9 @@ class Group[T] {
     result
   }
 
-  /* TODO: only a view of the contents should be provided? */
-  get(self: mut): Queue[Cell[T]] & iso {
-    self._resources = Queue.create(0)
+  /* TODO: when we have mut* we can remove the replace method */
+  replace(self: mut, swap: Queue[Cell[T]] & iso): Queue[Cell[T]] & iso {
+    self._resources = swap
   }
 
   /*
@@ -183,23 +187,28 @@ class Main {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
-    /*
-    when (var sub = Pool.request(g, 3)) {
+    when (var sub = Pool.request(p, 3)) {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
-      var r = sub.get();
-      Builtin.print1("r: {:#}\n", r);
-      var e = r.remove();
-      match e {
+      var r = (mut-view sub).replace(Queue.create(1));
+      match (mut-view r).remove() {
         var _: None => Builtin.print("None?\n"),
-        var c: Resource[U64Obj & iso] => {
-          Builtin.print1("Contents: {:#}\n", (mut-view c).read());
+        var c: Cell[U64Obj & iso] => {
+          match (mut-view c).extract() {
+            var _: None => {}
+            var o: U64Obj => {
+              Builtin.print1("Contents: {:#}\n", mut-view o);
+              (mut-view c).write(o);
+            }
+          };
+          (mut-view r).add(c)
         }
       };
+
+      (mut-view sub).replace(r);
     };
 
-    when (var sub = Pool.request(g, 2)) {
+    when (var sub = Pool.request(p, 3)) {
       Builtin.print1("Resources: {:#}\n", sub);
     };
-    */
   }
 }
