@@ -44,18 +44,14 @@ class Cell[T] {
  extract(self: mut): (T & iso) | (None & imm) {
     self._data = Builtin.freeze(new None)
   }
-
-  write(self: mut, data: T & iso): (T & iso) | (None & imm) {
-    self._data = data
-  }
 }
 
 class Group[T] {
   _pool: cown[Pool[T]] & imm;
-  _resources: List[Cell[T]] & iso;
+  _resources: Queue[Cell[T]] & iso;
 
   create(pool: cown[Pool[T]] & imm,
-         resources: List[Cell[T]] & iso): Group[T] & iso {
+         resources: Queue[Cell[T]] & iso): Group[T] & iso {
     var result = new Group;
     result._pool = pool;
     result._resources = resources;
@@ -63,18 +59,8 @@ class Group[T] {
   }
 
   /* TODO: only a view of the contents should be provided? */
-  get(self: mut): List[Cell[T]] & mut {
-    mut-view (self._resources)
-  }
-
-  _return_resources(self: mut) {
-    match (mut-view (self._resources)).pop_front() {
-      var _: None => {} /* finished returning resources */
-      var c: Cell[T] => {
-        Pool.return(self._pool, c);
-        self._return_resources();
-      }
-    }
+  get(self: mut): Queue[Cell[T]] & iso {
+    self._resources = Queue.create(0)
   }
 
   /*
@@ -82,7 +68,7 @@ class Group[T] {
    * original Pool
    */
   final(self: mut) {
-    self._return_resources();
+    Pool.return(self._pool, self._resources = Queue.create(0));
   }
 }
 
@@ -90,39 +76,49 @@ class Group[T] {
 // type system seems to forbid it, since the class Cell
 // has a field  "_data: (T & iso) | (None & imm);"
 class Pool[T] {
-  _resources: List[Cell[T]] & iso;
-  _requests: List[Request[T]] & iso;
+  _resources: Queue[Cell[T]] & iso;
+  _requests: Queue[Request[T]] & iso;
 
-  create(resources: List[Cell[T]] & iso): cown[Pool[T]] & imm {
+  create(resources: Queue[Cell[T]] & iso): cown[Pool[T]] & imm {
     var result = new Pool;
     result._resources = resources;
-    result._requests = List.create();
+    result._requests = Queue.create(0);
     cown.create(result)
   }
 
-  return(pool: cown[Pool[T]] & imm, cell: Cell[T] & iso) {
-    when (pool) {
-      (mut-view (pool._resources)).push_back(cell)
-    };
-    Pool._check_requests(pool);
+  _return(self: mut, resources: Queue[Cell[T]] & iso) {
+    match (mut-view (resources)).remove() {
+      var _: None => {} /* finished returning resources */
+      var c: Cell[T] => {
+        (mut-view (self._resources)).add(c);
+        self._return(resources);
+      }
+    }
+  }
+
+  return(pool: cown[Pool[T]] & imm, resources: Queue[Cell[T]] & iso) {
+    when (var p = pool) {
+      p._return(resources);
+      Pool._check_requests(pool);
+    }
   }
 
   /*
-   * Take n resources out of the pool and put the into a list
+   * take n resources out of the pool and put them into a list
    */
-  _take_n(self: mut, n: U64 & imm, rs: List[Cell[T]] & iso)
-          : List[Cell[T]] & iso {
+  _take_n(self: mut, n: U64 & imm, resources: Queue[Cell[T]] & iso)
+          : Queue[Cell[T]] & iso {
     if (n > 0) {
-      var resource = (mut-view (self._resources)).pop_front();
+      var resource = (mut-view (self._resources)).remove();
       match resource {
         // already checked that there are more than n available resources
         // so the None branch _should_ not be reached.
         var _: None => {}
-        var c: Cell[T] => (mut-view rs).push_back(c),
+        var c: Cell[T] => (mut-view resources).add(c),
       };
-      self._take_n(n - 1, rs)
+      self._take_n(n - 1, resources)
     } else {
-      rs
+      resources
     }
   }
 
@@ -133,14 +129,17 @@ class Pool[T] {
    */
   _check_requests(pool: cown[Pool[T]] & imm) {
     when (var p = pool) {
-      match ((mut-view (p._requests)).pop_front()) {
+      // get the first waiting request
+      match ((mut-view (p._requests)).remove()) {
         var _: None => {}
         var r: Request[T] => {
-          if (r._n <= ((mut-view (p._resources)).size())) {
-            r.fulfill(Group.create(pool, p._take_n(r._n, List.create())));
+          if (r._n <= ((mut-view (p._resources)).length)) {
+            // fulfill it and check the next request
+            r.fulfill(Group.create(pool, p._take_n(r._n, Queue.create(0))));
             Pool._check_requests(pool);
           } else {
-            (mut-view (p._requests)).push_front(r);
+            // otherwise, push back on to the head of the queue
+            (mut-view (p._requests)).add_front(r);
           }
         }
       }
@@ -157,7 +156,7 @@ class Pool[T] {
     var request = Request.create(n);
     var handle = (mut-view request).await();
     when (var p = pool) {
-      (mut-view (p._requests)).push_back(request);
+      (mut-view (p._requests)).add(request);
       Pool._check_requests(pool);
     };
     handle
@@ -166,10 +165,10 @@ class Pool[T] {
 
 class Main {
   main() {
-    var resources = List.create();
-    (mut-view resources).push_back(Cell.create(U64Obj.create(1)));
-    (mut-view resources).push_back(Cell.create(U64Obj.create(2)));
-    (mut-view resources).push_back(Cell.create(U64Obj.create(3)));
+    var resources = Queue.create(0);
+    (mut-view resources).add(Cell.create(U64Obj.create(1)));
+    (mut-view resources).add(Cell.create(U64Obj.create(2)));
+    (mut-view resources).add(Cell.create(U64Obj.create(3)));
     var p = Pool.create(resources);
 
     when (var sub = Pool.request(p, 2)) {
@@ -189,7 +188,7 @@ class Main {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
       var r = sub.get();
       Builtin.print1("r: {:#}\n", r);
-      var e = r.pop_front();
+      var e = r.remove();
       match e {
         var _: None => Builtin.print("None?\n"),
         var c: Resource[U64Obj & iso] => {
