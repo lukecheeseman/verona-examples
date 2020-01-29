@@ -28,17 +28,27 @@ class Request[T] {
   }
 }
 
+interface Function[T]
+{
+  apply(self: mut, e: (T & iso) | (None & imm)): (T & iso) | (None & imm);
+  foo(self: mut, e: T);
+}
+
 /*
  * A wrapper around some data so that a resource can be used to fulfill
  * a promise, regardless of the resource's capbability
  */
 class Cell[T] {
-  _data: T & iso;
+  _data: (T & iso) | (None & imm);
 
   create(data: T & iso): Cell[T] & iso {
     var result = new Cell;
     result._data = data;
     result
+  }
+
+  extract(self: mut): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
   }
 }
 
@@ -46,11 +56,22 @@ class Resource[T] {
   _cell: (Cell[T] & iso) | (None & imm);
   _origin: cown[Pool[T]] & imm;
 
-  create(cell: Cell[T] & iso, origin: cown[Pool[T]] & imm): Resource[T] & iso {
+  create(origin: cown[Pool[T]] & imm, cell: Cell[T] & iso): Resource[T] & iso {
     var result = new Resource;
     result._cell = cell;
     result._origin = origin;
     result
+  }
+
+  extract(self: mut): (T & iso) | (None & imm) {
+    match (self._cell = Builtin.freeze(new None)) {
+      var _: None => Builtin.freeze(new None),
+      var c: Cell[T] => (mut-view c).extract(),
+    }
+  }
+
+  return(self: mut, resource: T & iso) {
+    self._cell = Cell.create(resource);
   }
 
   /*
@@ -101,7 +122,8 @@ class Pool[T] {
   }
 
   /*
-   * take n resources out of the pool and put them into a list
+   * take n resources out of the pool and put them into a list,
+   * currently this is very messy as looping constructs are very finicky
    */
   _take_n(self: mut, n: U64 & imm, pool: cown[Pool[T]] & imm,
           resources: Queue[Resource[T]] & iso)
@@ -112,7 +134,7 @@ class Pool[T] {
         // already checked that there are more than n available resources
         // so the None branch _should_ not be reached.
         var _: None => {}
-        var c: Cell[T] => (mut-view resources).add(Resource.create(c, pool)),
+        var c: Cell[T] => (mut-view resources).add(Resource.create(pool, c)),
       };
       self._take_n(n - 1, pool, resources)
     } else {
@@ -161,6 +183,13 @@ class Pool[T] {
   }
 }
 
+class Task {
+  apply(self: mut, o: U64Obj & iso): U64Obj & iso {
+    Builtin.print1("Contents: {:#}\n", mut-view o);
+    o
+  }
+}
+
 class Main {
   main() {
     var p = Pool.create();
@@ -180,7 +209,6 @@ class Main {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
-    /*
     when (var sub = Pool.request(p, 3)) {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
       var rs = (mut-view sub).extract();
@@ -188,11 +216,12 @@ class Main {
         var _: None => Builtin.print("None?\n"),
         var r: Resource[U64Obj & iso] => {
           match (mut-view r).extract() {
-            var _: None => {}
+            var _: None => {},
             var o: U64Obj => {
-              Builtin.print1("Contents: {:#}\n", mut-view o);
+              Builtin.print1("Got: {:#}\n", mut-view o);
+              (mut-view r).return(o);
             }
-          };
+          }
         }
       }
     };
@@ -200,6 +229,5 @@ class Main {
     when (var sub = Pool.request(p, 3)) {
       Builtin.print1("Resources: {:#}\n", sub);
     };
-  */
   }
 }
