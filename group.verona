@@ -28,6 +28,26 @@ class Request[T] {
   }
 }
 
+class DesiredCell[T] {
+  _data: T & iso;
+
+  create(data: T & iso): DesiredCell[T] & iso {
+    var result = new DesiredCell;
+    result._data = data;
+    result
+  }
+
+  read(self: mut): T & iso {
+    /* what _should_ the return type be, should
+     * it be allowed? I want it to return me
+     * so view of the data that I can manipulate
+     * but not take. Is this mut* ?
+     */
+    self._data
+  }
+
+}
+
 /*
  * A wrapper around some data so that a resource can be used to fulfill
  * a promise, regardless of the resource's capbability
@@ -119,20 +139,19 @@ class Pool[T] {
    * take n resources out of the pool and put them into a list,
    * currently this is very messy as looping constructs are very finicky
    */
-  _take_n(self: mut, n: U64 & imm, pool: cown[Pool[T]] & imm,
-          resources: Queue[Resource[T]] & iso)
+  _take_n(pool: cown[Pool[T]] & imm, resources: Queue[Cell[T]] & mut,
+          n: U64 & imm, out: Queue[Resource[T]] & iso)
         : Queue[Resource[T]] & iso {
     if (n > 0) {
-      var resource = (mut-view (self._resources)).remove();
-      match resource {
+      match resources.remove() {
         // already checked that there are more than n available resources
         // so the None branch _should_ not be reached.
         var _: None => {}
-        var c: Cell[T] => (mut-view resources).add(Resource.create(pool, c)),
+        var c: Cell[T] => (mut-view out).add(Resource.create(pool, c)),
       };
-      self._take_n(n - 1, pool, resources)
+      Pool._take_n(pool, resources, n - 1, out)
     } else {
-      resources
+      out
     }
   }
 
@@ -147,9 +166,11 @@ class Pool[T] {
       match ((mut-view (p._requests)).remove()) {
         var _: None => {}
         var r: Request[T] => {
-          if (r._n <= ((mut-view (p._resources)).length)) {
+          var resources = mut-view (p._resources);
+          if (r._n <= (resources.length)) {
             // fulfill it and check the next request
-            r.fulfill(Group.create(p._take_n(r._n, pool, Queue.create(0))));
+            var sub = Pool._take_n(pool, resources, r._n, Queue.create(0));
+            r.fulfill(Group.create(sub));
             Pool._check_requests(pool);
           } else {
             // otherwise, push back on to the head of the queue
