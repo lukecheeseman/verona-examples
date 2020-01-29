@@ -28,12 +28,6 @@ class Request[T] {
   }
 }
 
-interface Function[T]
-{
-  apply(self: mut, e: (T & iso) | (None & imm)): (T & iso) | (None & imm);
-  foo(self: mut, e: T);
-}
-
 /*
  * A wrapper around some data so that a resource can be used to fulfill
  * a promise, regardless of the resource's capbability
