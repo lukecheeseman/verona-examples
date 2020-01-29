@@ -33,76 +33,69 @@ class Request[T] {
  * a promise, regardless of the resource's capbability
  */
 class Cell[T] {
-  _data: (T & iso) | (None & imm);
+  _data: T & iso;
 
   create(data: T & iso): Cell[T] & iso {
     var result = new Cell;
     result._data = data;
     result
   }
+}
 
-  write(self: mut, data: T & iso): (T & iso) | (None & imm) {
-    self._data = data
+class Resource[T] {
+  _cell: (Cell[T] & iso) | (None & imm);
+  _origin: cown[Pool[T]] & imm;
+
+  create(cell: Cell[T] & iso, origin: cown[Pool[T]] & imm): Resource[T] & iso {
+    var result = new Resource;
+    result._cell = cell;
+    result._origin = origin;
+    result
   }
 
-  extract(self: mut): (T & iso) | (None & imm) {
-    self._data = Builtin.freeze(new None)
+  /*
+   * Finaliser returns the resource in the Resource to the
+   * original Pool
+   */
+  final(self: mut) {
+    match (self._cell = Builtin.freeze(new None)) {
+      var _: None => {}
+      var c: Cell[T] => Pool.add(self._origin, c),
+    }
   }
 }
 
 class Group[T] {
-  _pool: cown[Pool[T]] & imm;
-  _resources: Queue[Cell[T]] & iso;
+  _resources: Queue[Resource[T]] & iso;
 
-  create(pool: cown[Pool[T]] & imm,
-         resources: Queue[Cell[T]] & iso): Group[T] & iso {
+  create(resources: Queue[Resource[T]] & iso): Group[T] & iso {
     var result = new Group;
-    result._pool = pool;
     result._resources = resources;
     result
   }
 
-  /* TODO: when we have mut* we can remove the replace method */
-  replace(self: mut, swap: Queue[Cell[T]] & iso): Queue[Cell[T]] & iso {
-    self._resources = swap
-  }
-
-  /*
-   * Finaliser returns the resources in the Group to their
-   * original Pool
-   */
-  final(self: mut) {
-    Pool.return(self._pool, self._resources = Queue.create(0));
+  extract(self: mut): Queue[Resource[T]] & iso {
+    self._resources = Queue.create(0)
   }
 }
 
 // SD: can a T belong to more than one pool?
-// type system seems to forbid it, since the class Cell
+// type system seems to forbid it, since the class Resource
 // has a field  "_data: (T & iso) | (None & imm);"
 class Pool[T] {
   _resources: Queue[Cell[T]] & iso;
   _requests: Queue[Request[T]] & iso;
 
-  create(resources: Queue[Cell[T]] & iso): cown[Pool[T]] & imm {
+  create(): cown[Pool[T]] & imm {
     var result = new Pool;
-    result._resources = resources;
+    result._resources = Queue.create(0);
     result._requests = Queue.create(0);
     cown.create(result)
   }
 
-  _return(self: mut, resources: Queue[Cell[T]] & iso) {
-    match (mut-view (resources)).remove() {
-      var _: None => {} /* finished returning resources */
-      var c: Cell[T] => {
-        (mut-view (self._resources)).add(c);
-        self._return(resources);
-      }
-    }
-  }
-
-  return(pool: cown[Pool[T]] & imm, resources: Queue[Cell[T]] & iso) {
+  add(pool: cown[Pool[T]] & imm, resource: Cell[T] & iso) {
     when (var p = pool) {
-      p._return(resources);
+      (mut-view (p._resources)).add(resource);
       Pool._check_requests(pool);
     }
   }
@@ -110,17 +103,18 @@ class Pool[T] {
   /*
    * take n resources out of the pool and put them into a list
    */
-  _take_n(self: mut, n: U64 & imm, resources: Queue[Cell[T]] & iso)
-          : Queue[Cell[T]] & iso {
+  _take_n(self: mut, n: U64 & imm, pool: cown[Pool[T]] & imm,
+          resources: Queue[Resource[T]] & iso)
+        : Queue[Resource[T]] & iso {
     if (n > 0) {
       var resource = (mut-view (self._resources)).remove();
       match resource {
         // already checked that there are more than n available resources
         // so the None branch _should_ not be reached.
         var _: None => {}
-        var c: Cell[T] => (mut-view resources).add(c),
+        var c: Cell[T] => (mut-view resources).add(Resource.create(c, pool)),
       };
-      self._take_n(n - 1, resources)
+      self._take_n(n - 1, pool, resources)
     } else {
       resources
     }
@@ -139,7 +133,7 @@ class Pool[T] {
         var r: Request[T] => {
           if (r._n <= ((mut-view (p._resources)).length)) {
             // fulfill it and check the next request
-            r.fulfill(Group.create(pool, p._take_n(r._n, Queue.create(0))));
+            r.fulfill(Group.create(p._take_n(r._n, pool, Queue.create(0))));
             Pool._check_requests(pool);
           } else {
             // otherwise, push back on to the head of the queue
@@ -169,11 +163,10 @@ class Pool[T] {
 
 class Main {
   main() {
-    var resources = Queue.create(0);
-    (mut-view resources).add(Cell.create(U64Obj.create(1)));
-    (mut-view resources).add(Cell.create(U64Obj.create(2)));
-    (mut-view resources).add(Cell.create(U64Obj.create(3)));
-    var p = Pool.create(resources);
+    var p = Pool.create();
+    Pool.add(p, Cell.create(U64Obj.create(1)));
+    Pool.add(p, Cell.create(U64Obj.create(2)));
+    Pool.add(p, Cell.create(U64Obj.create(3)));
 
     when (var sub = Pool.request(p, 2)) {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
@@ -187,28 +180,26 @@ class Main {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
     };
 
+    /*
     when (var sub = Pool.request(p, 3)) {
       Builtin.print1("Resources: {:#}\n-----------------------------------\n", sub);
-      var r = (mut-view sub).replace(Queue.create(1));
-      match (mut-view r).remove() {
+      var rs = (mut-view sub).extract();
+      match (mut-view rs).remove() {
         var _: None => Builtin.print("None?\n"),
-        var c: Cell[U64Obj & iso] => {
-          match (mut-view c).extract() {
+        var r: Resource[U64Obj & iso] => {
+          match (mut-view r).extract() {
             var _: None => {}
             var o: U64Obj => {
               Builtin.print1("Contents: {:#}\n", mut-view o);
-              (mut-view c).write(o);
             }
           };
-          (mut-view r).add(c)
         }
-      };
-
-      (mut-view sub).replace(r);
+      }
     };
 
     when (var sub = Pool.request(p, 3)) {
       Builtin.print1("Resources: {:#}\n", sub);
     };
+  */
   }
 }
