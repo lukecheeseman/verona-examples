@@ -1,0 +1,163 @@
+use "group.verona"
+
+class Reindeer {
+  _id: U64 & imm;
+
+  create(id: U64 & imm): Reindeer & iso {
+    var result = new Reindeer;
+    result._id = id;
+    result
+  }
+
+  holiday(self: mut) {
+    // This should be some sleep
+    when() {
+      var i = 0;
+      while (i < 2000000) {
+        i = i + 1;
+      };
+    }
+  }
+
+  deliver_toys(self: mut) {
+    Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
+  }
+}
+
+class Elf {
+  _id: U64 & imm;
+
+  create(id: U64 & imm): Elf & iso {
+    var result = new Elf;
+    result._id = id;
+    result
+  }
+
+  work(self: mut) {
+    // This should be some sleep
+    when() {
+      var i = 0;
+      while (i < 2000000) {
+        i = i + 1;
+      };
+    }
+  }
+
+  meet_in_study(self: mut) {
+    Builtin.print1("Elf {:#} is meeting in study\n", self._id);
+  }
+}
+
+class Santa {
+  create(): cown[Santa] & imm {
+    cown.create(new Santa)
+  }
+
+  deliver_toys(self: mut) {
+    Builtin.print("Santa is delivering toys\n");
+  }
+
+  meet_in_study(self: mut) {
+    Builtin.print("Santa is meeting in study\n");
+  }
+}
+
+class Workshop {
+  _santa: cown[Santa] & imm;
+  _reindeer: cown[Pool[Reindeer]] & imm;
+  _elves: cown[Pool[Elf]] & imm;
+
+  create() {
+    // create santa
+    var santa = Santa.create();
+
+    // create the reindeer
+    var reindeer = Pool.create();
+    var i = 0;
+    while (i < 9) {
+      i = i + 1;
+      Pool.add(reindeer, Cell.create(Reindeer.create(i)));
+    };
+
+    // create the elves
+    var elves = Pool.create();
+    i = 0;
+    while (i < 7) {
+      i = i + 1;
+      Pool.add(elves, Cell.create(Elf.create(i)));
+    };
+
+    Builtin.print("Running the workshop\n");
+
+    when() {
+      Workshop.deliver_toys(santa, reindeer);
+    };
+
+    when() {
+      Workshop.meet_in_study(santa, elves);
+    }
+  }
+
+  deliver_toys(santa: cown[Santa] & imm, reindeerpool: cown[Pool[Reindeer]] & imm) {
+    when(santa, var reindeer = Pool.request(reindeerpool, 9)) {
+      santa.deliver_toys();
+      var i = 0;
+      var rs = mut-view (reindeer.extract());
+      while (i < 9) {
+        match (rs.remove()) { /* FIXME: what a horrible pattern */
+          var _: None => {}
+          var r: Resource[Reindeer] => {
+            match (mut-view r).extract() {
+              var _: None => {}
+              var reindeer: Reindeer => {
+                (mut-view reindeer).deliver_toys();
+                when() {
+                  (mut-view reindeer).holiday();
+                  (mut-view r).return(reindeer);
+                }
+              }
+            }
+          }
+        };
+        i = i + 1;
+      };
+    };
+    when () {
+      Workshop.deliver_toys(santa, reindeerpool);
+    }
+  }
+
+  meet_in_study(santa: cown[Santa] & imm, elfpool: cown[Pool[Elf]] & imm) {
+    when(santa, var elves = Pool.request(elfpool, 3)) {
+      var i = 0;
+      var es = mut-view (elves.extract());
+      while (i < 3) {
+        match (es.remove()) { /* FIXME: what a horrible pattern */
+          var _: None => {}
+          var r: Resource[Elf] => {
+            match (mut-view r).extract() {
+              var _: None => {}
+              var elf: Elf => {
+                (mut-view elf).meet_in_study();
+                when() {
+                  (mut-view elf).work();
+                  (mut-view r).return(elf);
+                }
+              }
+            }
+          }
+        };
+        i = i + 1;
+      };
+    };
+    when () {
+      Workshop.meet_in_study(santa, elfpool);
+    }
+  }
+}
+
+class Main {
+  main() {
+    Workshop.create();
+  }
+}
