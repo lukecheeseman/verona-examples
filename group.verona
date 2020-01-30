@@ -28,32 +28,12 @@ class Request[T] {
   }
 }
 
-class DesiredCell[T] {
-  _data: T & iso;
-
-  create(data: T & iso): DesiredCell[T] & iso {
-    var result = new DesiredCell;
-    result._data = data;
-    result
-  }
-
-  read(self: mut): T & iso {
-    /* what _should_ the return type be, should
-     * it be allowed? I want it to return me
-     * so view of the data that I can manipulate
-     * but not take. Is this mut* ?
-     */
-    self._data
-  }
-
-}
-
 /*
  * A wrapper around some data so that a resource can be used to fulfill
  * a promise, regardless of the resource's capbability
  */
 class Cell[T] {
-  _data: (T & iso) | (None & imm);
+  _data: T & iso;
 
   create(data: T & iso): Cell[T] & iso {
     var result = new Cell;
@@ -61,8 +41,8 @@ class Cell[T] {
     result
   }
 
-  extract(self: mut): (T & iso) | (None & imm) {
-    self._data = Builtin.freeze(new None)
+  read(self: mut): T & iso where return in self {
+    self._data
   }
 }
 
@@ -77,15 +57,11 @@ class Resource[T] {
     result
   }
 
-  extract(self: mut): (T & iso) | (None & imm) {
-    match (self._cell = Builtin.freeze(new None)) {
+  use(self: mut): (T & iso) | (None & imm) where return in self {
+    match (self._cell) {
       var _: None => Builtin.freeze(new None),
-      var c: Cell[T] => (mut-view c).extract(),
+      var c: Cell[T] => (mut-view c).read(),
     }
-  }
-
-  return(self: mut, resource: T & iso) {
-    self._cell = Cell.create(resource);
   }
 
   /*
@@ -198,13 +174,7 @@ class Pool[T] {
   }
 }
 
-class Task {
-  apply(self: mut, o: U64Obj & iso): U64Obj & iso {
-    Builtin.print1("Contents: {:#}\n", mut-view o);
-    o
-  }
-}
-
+/*
 class Main {
   main() {
     var p = Pool.create();
@@ -230,11 +200,10 @@ class Main {
       match (mut-view rs).remove() {
         var _: None => Builtin.print("None?\n"),
         var r: Resource[U64Obj & iso] => {
-          match (mut-view r).extract() {
+          match (mut-view r).use() {
             var _: None => {},
             var o: U64Obj => {
               Builtin.print1("Got: {:#}\n", mut-view o);
-              (mut-view r).return(o);
             }
           }
         }
@@ -245,4 +214,4 @@ class Main {
       Builtin.print1("Resources: {:#}\n", sub);
     };
   }
-}
+}*/
