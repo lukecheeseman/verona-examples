@@ -1,0 +1,53 @@
+use "group.verona"
+
+class Main {
+  print_resources(rs: Queue[Resource[U64Obj]] & iso) {
+    match ((mut-view rs).remove()) {
+      var _: None => {}
+      var r: Resource[U64Obj] => {
+        var o = (mut-view r).use();
+        Builtin.print1("Got: {:#}\n", mut-view o);
+        Main.print_resources(rs);
+      }
+    };
+  }
+
+  main() {
+    var p = Pool.create();
+    Pool.add(p, Cell.create(U64Obj.create(1)));
+    Pool.add(p, Cell.create(U64Obj.create(2)));
+    Pool.add(p, Cell.create(U64Obj.create(3)));
+    Pool.add(p, Cell.create(U64Obj.create(4)));
+
+    when (var group = Pool.request(p, 2)) {
+      Builtin.print("-----------------------------------\n");
+      Builtin.print1("Got group of size: {:#}\n", (mut-view group).size());
+      Main.print_resources((mut-view group).extract());
+    };
+
+    when (var group = Pool.request(p, 1)) {
+      Builtin.print("-----------------------------------\n");
+      Builtin.print1("Got group of size: {:#}\n", (mut-view group).size());
+      Main.print_resources((mut-view group).extract());
+    };
+
+    when (var group = Pool.request(p, 2)) {
+      Builtin.print("-----------------------------------\n");
+      Builtin.print1("Got group of size: {:#}\n", (mut-view group).size());
+      Main.print_resources((mut-view group).extract());
+    };
+
+    when (var group = Pool.request(p, 3)) {
+      Builtin.print("-----------------------------------\n");
+      Builtin.print1("Got group of size: {:#}\n", (mut-view group).size());
+      Main.print_resources((mut-view group).extract());
+    };
+
+    when (var group = Pool.request(p, 3)) {
+      Builtin.print("-----------------------------------\n");
+      Builtin.print1("Got group of size: {:#}\n", (mut-view group).size());
+      Main.print_resources((mut-view group).extract());
+    };
+  }
+}
+
