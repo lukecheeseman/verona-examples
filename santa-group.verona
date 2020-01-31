@@ -1,5 +1,10 @@
 use "group.verona"
 
+interface Entity {
+  sleep(self: mut);
+  apply(self: mut);
+}
+
 class Reindeer {
   _id: U64 & imm;
 
@@ -9,9 +14,11 @@ class Reindeer {
     result
   }
 
-  holiday(self: mut) {
+  sleep(self: mut) {
     // This should be some sleep
+    var id = self._id;
     when() {
+      Builtin.print1("Reindeer {:#} is on holiday\n", id);
       var i = 0;
       while (i < 2000000) {
         i = i + 1;
@@ -19,7 +26,7 @@ class Reindeer {
     }
   }
 
-  deliver_toys(self: mut) {
+  apply(self: mut) {
     Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
   }
 }
@@ -33,9 +40,11 @@ class Elf {
     result
   }
 
-  work(self: mut) {
+  sleep(self: mut) {
     // This should be some sleep
+    var id = self._id;
     when() {
+      Builtin.print1("Elf {:#} is working\n", id);
       var i = 0;
       while (i < 2000000) {
         i = i + 1;
@@ -43,7 +52,7 @@ class Elf {
     }
   }
 
-  meet_in_study(self: mut) {
+  apply(self: mut) {
     Builtin.print1("Elf {:#} is meeting in study\n", self._id);
   }
 }
@@ -63,10 +72,6 @@ class Santa {
 }
 
 class Workshop {
-  _santa: cown[Santa] & imm;
-  _reindeer: cown[Pool[Reindeer]] & imm;
-  _elves: cown[Pool[Elf]] & imm;
-
   create() {
     // create santa
     var santa = Santa.create();
@@ -89,69 +94,38 @@ class Workshop {
 
     Builtin.print("Running the workshop\n");
 
-    when() {
-      Workshop.deliver_toys(santa, reindeer);
-    };
-
-    when() {
-      Workshop.meet_in_study(santa, elves);
-    }
+    Workshop.act(santa, reindeer, 9);
+    Workshop.act(santa, elves, 3);
   }
 
-  deliver_toys(santa: cown[Santa] & imm, reindeerpool: cown[Pool[Reindeer]] & imm) {
-    when(santa, var reindeer = Pool.request(reindeerpool, 9)) {
-      santa.deliver_toys();
-      var i = 0;
-      var rs = mut-view (reindeer.extract());
-      while (i < 9) {
-        match (rs.remove()) { /* FIXME: what a horrible pattern */
-          var _: None => {}
-          var r: Resource[Reindeer] => {
-            match (mut-view r).extract() {
-              var _: None => {}
-              var reindeer: Reindeer => {
-                (mut-view reindeer).deliver_toys();
-                when() {
-                  (mut-view reindeer).holiday();
-                  (mut-view r).return(reindeer);
-                }
-              }
-            }
-          }
+  _dispatch_entities[E: Entity](qentity: Queue[Resource[E]] & iso) {
+    match (mut-view qentity).remove() {
+      var _: None => {}
+      var rentity: Resource[E] => {
+        var entity = (mut-view rentity).use();
+        (mut-view entity).apply();
+        when () {
+          var entity = (mut-view rentity).use();
+          (mut-view entity).sleep();
         };
-        i = i + 1;
-      };
+        Workshop._dispatch_entities(qentity);
+      }
     };
-    when () {
-      Workshop.deliver_toys(santa, reindeerpool);
-    }
   }
 
-  meet_in_study(santa: cown[Santa] & imm, elfpool: cown[Pool[Elf]] & imm) {
-    when(santa, var elves = Pool.request(elfpool, 3)) {
-      var i = 0;
-      var es = mut-view (elves.extract());
-      while (i < 3) {
-        match (es.remove()) { /* FIXME: what a horrible pattern */
-          var _: None => {}
-          var r: Resource[Elf] => {
-            match (mut-view r).extract() {
-              var _: None => {}
-              var elf: Elf => {
-                (mut-view elf).meet_in_study();
-                when() {
-                  (mut-view elf).work();
-                  (mut-view r).return(elf);
-                }
-              }
-            }
-          }
-        };
-        i = i + 1;
+  act[E: Entity](santa: cown[Santa] & imm, pool: cown[Pool[E]] & imm,
+                 n: U64 & imm) {
+    when(santa, var group = Pool.request(pool, n)) {
+      Builtin.print("------------------------------------\n");
+      // FIXME: horrid inspection of the type parameter
+      match(group) {
+        var rg: Group[Reindeer & iso] => santa.deliver_toys(),
+        var eg: Group[Elf & iso] => santa.meet_in_study(),
       };
+      Workshop._dispatch_entities(group.extract());
     };
-    when () {
-      Workshop.meet_in_study(santa, elfpool);
+    when() {
+      Workshop.act(santa, pool, n);
     }
   }
 }
