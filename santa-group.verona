@@ -16,14 +16,11 @@ class Reindeer {
 
   sleep(self: mut) {
     // This should be some sleep
-    var id = self._id;
-    when() {
-      Builtin.print1("Reindeer {:#} is on holiday\n", id);
-      var i = 0;
-      while (i < 2000000) {
-        i = i + 1;
-      };
-    }
+    Builtin.print1("Reindeer {:#} is on holiday\n", self._id);
+    var i = 0;
+    while (i < 2000) {
+      i = i + 1;
+    };
   }
 
   apply(self: mut) {
@@ -42,14 +39,11 @@ class Elf {
 
   sleep(self: mut) {
     // This should be some sleep
-    var id = self._id;
-    when() {
-      Builtin.print1("Elf {:#} is working\n", id);
-      var i = 0;
-      while (i < 2000000) {
-        i = i + 1;
-      };
-    }
+    Builtin.print1("Elf {:#} is working\n", self._id);
+    var i = 0;
+    while (i < 2000) {
+      i = i + 1;
+    };
   }
 
   apply(self: mut) {
@@ -61,13 +55,28 @@ class Santa {
   create(): cown[Santa] & imm {
     cown.create(new Santa)
   }
+}
 
-  deliver_toys(self: mut) {
-    Builtin.print("Santa is delivering toys\n");
-  }
+interface WorkshopAction[E: Entity] {
+  apply(self: imm, santa: Santa & mut, entities: Queue[Resource[E]] & iso);
+}
 
-  meet_in_study(self: mut) {
+class DeliverToys {
+  create(): DeliverToys & imm { Builtin.freeze(new DeliverToys) }
+  apply(self: imm, santa: Santa & mut,
+        entities: Queue[Resource[Reindeer]] & iso) {
     Builtin.print("Santa is meeting in study\n");
+    Workshop._dispatch_entities(entities);
+  }
+}
+
+class MeetInStudy {
+  create(): MeetInStudy & imm { Builtin.freeze(new MeetInStudy) }
+  apply(self: imm, santa: Santa & mut,
+        entities: Queue[Resource[Elf]] & iso)
+  {
+    Builtin.print("Santa is meeting in study\n");
+    Workshop._dispatch_entities(entities);
   }
 }
 
@@ -93,9 +102,8 @@ class Workshop {
     };
 
     Builtin.print("Running the workshop\n");
-
-    Workshop.act(santa, reindeer, 9);
-    Workshop.act(santa, elves, 3);
+    Workshop.act(DeliverToys.create(), santa, reindeer, 9);
+    Workshop.act(MeetInStudy.create(), santa, elves, 3);
   }
 
   _dispatch_entities[E: Entity](qentity: Queue[Resource[E]] & iso) {
@@ -113,19 +121,14 @@ class Workshop {
     };
   }
 
-  act[E: Entity](santa: cown[Santa] & imm, pool: cown[Pool[E]] & imm,
-                 n: U64 & imm) {
+  act[E: Entity](action: WorkshopAction[E] & imm, santa: cown[Santa] & imm,
+                 pool: cown[Pool[E]] & imm, n: U64 & imm) {
     when(santa, var group = Pool.request(pool, n)) {
       Builtin.print("------------------------------------\n");
-      // FIXME: horrid inspection of the type parameter
-      match(group) {
-        var rg: Group[Reindeer & iso] => santa.deliver_toys(),
-        var eg: Group[Elf & iso] => santa.meet_in_study(),
-      };
-      Workshop._dispatch_entities(group.extract());
+      action.apply(santa, group.extract());
     };
     when() {
-      Workshop.act(santa, pool, n);
+      Workshop.act(action, santa, pool, n);
     }
   }
 }
