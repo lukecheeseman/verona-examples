@@ -22,7 +22,7 @@
  * enough of either group to peform an action.
  *
  * This solution demonstrates using cowns and pools; requesting N resources
- * from a Pool of N resources (but which N does not matter).
+ * from a Pool of M resources (but which N does not matter).
  *
  *****************************************************************************/
 use "group.verona"
