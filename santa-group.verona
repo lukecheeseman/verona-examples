@@ -88,10 +88,12 @@ class Santa {
     cown.create(new Santa)
   }
 
+  /* Santa meets in the study */
   meet_in_study(self: mut) {
     Builtin.print("Santa is meeting in study\n");
   }
 
+  /* Santa delivers toys */
   deliver_toys(self: mut) {
     Builtin.print("Santa is delivering toys\n");
   }
@@ -105,13 +107,16 @@ class Workshop {
    */
   _dispatch_helpers[H: Helper](qhelper: Queue[Resource[H]] & iso) {
     match (mut-view qhelper).remove() {
-      var _: None => {}
-      var rhelper: Resource[H] => {
-        var helper = (mut-view rhelper).use();
-        (mut-view helper).act();
+      var _: None => {} // no more helpers left to dispatch
+      var helper: Resource[H] => {
+        // run this helpers action
+        (mut-view ((mut-view helper).use())).act();
+        // asynchronously sleep (i.e. work or holiday), this passes the
+        // resource into the behaviour meaning that it will be finalised
+        // when then the hepler finishes sleeping and will automatically
+        // be returned to their pool of helpers.
         when () {
-          var helper = (mut-view rhelper).use();
-          (mut-view helper).sleep();
+          (mut-view ((mut-view helper).use())).sleep();
         };
         Workshop._dispatch_helpers(qhelper);
       }
