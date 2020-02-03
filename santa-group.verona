@@ -123,25 +123,41 @@ class Workshop {
     };
   }
 
+  /*
+   * Repeatedly deliver toys and re-schedules the same action.
+   */
   deliver_toys(santa: cown[Santa] & imm, reindeer: cown[Pool[Reindeer]] & imm) {
+    // When santa and 9 reindeer are available deliver toys, then santa
+    // becomes available and the 9 reindeer go on holiday and become
+    // available again once they return from holiday.
     when(var s = santa, var group = Pool.request(reindeer, 9)) {
       Builtin.print("------------------------------------\n");
       s.deliver_toys();
       Workshop._dispatch_helpers(group.extract());
-      Workshop.deliver_toys(santa, reindeer);
     };
+
+    // Put this in a when block as we don't want to call this synchronously,
+    // if we did then it would inifitely call itself and never release a
+    // thread, but we also don't need to wait for the previous behaviour
+    // to finish before scheduling the same behaviour again.
+    when() {
+      Workshop.deliver_toys(santa, reindeer);
+    }
   }
 
   /*
-   * Repeatedly does an action and then re-schedules the same action.
+   * Similar to deliver_toys so see that function for comments
    */
   meet_in_study(santa: cown[Santa] & imm, elves: cown[Pool[Elf]] & imm) {
     when(var s = santa, var group = Pool.request(elves, 3)) {
       Builtin.print("------------------------------------\n");
       s.meet_in_study();
       Workshop._dispatch_helpers(group.extract());
-      Workshop.meet_in_study(santa, elves);
     };
+
+    when() {
+      Workshop.meet_in_study(santa, elves);
+    }
   }
 
   create() {
