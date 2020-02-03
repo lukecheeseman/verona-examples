@@ -101,16 +101,30 @@ class Santa {
 
 class Workshop {
   /*
-   * Iterate over all the helpers in the queue and call their action and then
-   * have them asynchronously wait. Once they have finished waiting they will
-   * be returned to their Pool (as their wrapping Resource will be finalised).
+   * Iterate over all the helpers in the queue and call their action. This
+   * leaves the Queue with the same elements with which it started.
    */
-  _dispatch_helpers[H: Helper](qhelper: Queue[Resource[H]] & iso) {
-    match (mut-view qhelper).remove() {
+  _helpers_act[H: Helper](qhelper: Queue[Resource[H]] & mut) {
+    match qhelper.remove() {
       var _: None => {} // no more helpers left to dispatch
       var helper: Resource[H] => {
         // run this helpers action
         (mut-view ((mut-view helper).use())).act();
+        Workshop._helpers_act(qhelper);
+        qhelper.add(helper);
+      }
+    };
+  }
+
+  /*
+   * Iterate over all the helpers in the queue and have them asynchronously
+   * wait. Once they have finished waiting they will be returned to their
+   * Pool (as their wrapping Resource will be finalised).
+   */
+  _helpers_sleep[H: Helper](qhelper: Queue[Resource[H]] & iso) {
+    match (mut-view qhelper).remove() {
+      var _: None => {} // no more helpers left to dispatch
+      var helper: Resource[H] => {
         // asynchronously sleep (i.e. work or holiday), this passes the
         // resource into the behaviour meaning that it will be finalised
         // when then the hepler finishes sleeping and will automatically
@@ -118,7 +132,7 @@ class Workshop {
         when () {
           (mut-view ((mut-view helper).use())).sleep();
         };
-        Workshop._dispatch_helpers(qhelper);
+        Workshop._helpers_sleep(qhelper);
       }
     };
   }
@@ -133,7 +147,9 @@ class Workshop {
     when(var s = santa, var group = Pool.request(reindeer, 9)) {
       Builtin.print("------------------------------------\n");
       s.deliver_toys();
-      Workshop._dispatch_helpers(group.extract());
+      var helpers = group.extract();
+      Workshop._helpers_act(mut-view helpers);
+      Workshop._helpers_sleep(helpers);
     };
 
     // Put this in a when block as we don't want to call this synchronously,
@@ -152,7 +168,9 @@ class Workshop {
     when(var s = santa, var group = Pool.request(elves, 3)) {
       Builtin.print("------------------------------------\n");
       s.meet_in_study();
-      Workshop._dispatch_helpers(group.extract());
+      var helpers = group.extract();
+      Workshop._helpers_act(mut-view helpers);
+      Workshop._helpers_sleep(helpers);
     };
 
     when() {
