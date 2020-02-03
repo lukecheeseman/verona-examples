@@ -97,46 +97,6 @@ class Santa {
   }
 }
 
-/*
- * An action interface that for the workshop taking santa and one of the
- * two pools of helpers.
- */
-interface WorkshopAction[H: Helper] {
-  apply(self: imm, santa: cown[Santa] & imm, helpers: cown[Pool[H]] & imm);
-}
-
-/*
- * Schedule a behaviour so that when Santa and all 9 Reindeer are free,
- * the toys are delivered and then Reindeer go on holiday.
- */
-class DeliverToys {
-  create(): DeliverToys & imm { Builtin.freeze(new DeliverToys) }
-  apply(self: imm, santa: cown[Santa] & imm,
-        reindeer: cown[Pool[Reindeer]] & imm) {
-    when(santa, var group = Pool.request(reindeer, 9)) {
-      Builtin.print("------------------------------------\n");
-      santa.deliver_toys();
-      Workshop._dispatch_helpers(group.extract());
-    };
-  }
-}
-
-/*
- * Schedule a behaviour so that when Santa and 3 Elves are free,
- * they meet in the study and then the same 3 Elves go to work.
- */
-class MeetInStudy {
-  create(): MeetInStudy & imm { Builtin.freeze(new MeetInStudy) }
-  apply(self: imm, santa: cown[Santa] & imm,
-        elves: cown[Pool[Elf]] & imm) {
-    when(santa, var group = Pool.request(elves, 3)) {
-      Builtin.print("------------------------------------\n");
-      santa.meet_in_study();
-      Workshop._dispatch_helpers(group.extract());
-    };
-  }
-}
-
 class Workshop {
   /*
    * Iterate over all the helpers in the queue and call their action and then
@@ -158,15 +118,25 @@ class Workshop {
     };
   }
 
+  deliver_toys(santa: cown[Santa] & imm, reindeer: cown[Pool[Reindeer]] & imm) {
+    when(var s = santa, var group = Pool.request(reindeer, 9)) {
+      Builtin.print("------------------------------------\n");
+      s.deliver_toys();
+      Workshop._dispatch_helpers(group.extract());
+      Workshop.deliver_toys(santa, reindeer);
+    };
+  }
+
   /*
    * Repeatedly does an action and then re-schedules the same action.
    */
-  act[H: Helper](action: WorkshopAction[H] & imm, santa: cown[Santa] & imm,
-                 pool: cown[Pool[H]] & imm) {
-    when() {
-      action.apply(santa, pool);
-      Workshop.act(action, santa, pool);
-    }
+  meet_in_study(santa: cown[Santa] & imm, elves: cown[Pool[Elf]] & imm) {
+    when(var s = santa, var group = Pool.request(elves, 3)) {
+      Builtin.print("------------------------------------\n");
+      s.meet_in_study();
+      Workshop._dispatch_helpers(group.extract());
+      Workshop.meet_in_study(santa, elves);
+    };
   }
 
   create() {
@@ -196,13 +166,13 @@ class Workshop {
     // 9 Reindeer from the ReindeerPool. Once the resources are acquired,
     // the Reindeer will deliver toys and then, asynchronously, go on holiday.
     // Finally, returning back to the original Pool of Reindeer.
-    Workshop.act(DeliverToys.create(), santa, reindeer);
+    Workshop.deliver_toys(santa, reindeer);
 
     // Similarly, repeatedly schedule MeetInStudy behaviour to request
     // santa and 3 out of 7 elves. Once the resources are acquired, the Elves
     // will meet in the study and then, asynchronously, go to work. Finally,
     // returning back to the original Pool of Elves.
-    Workshop.act(MeetInStudy.create(), santa, elves);
+    Workshop.meet_in_study(santa, elves);
   }
 }
 
