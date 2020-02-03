@@ -1,3 +1,30 @@
+/*****************************************************************************
+ * This example demonstrates an example solution to the santa problem that
+ * follows (orginally found in Benton, Nick. "Jingle bells: Solving the santa
+ * claus problem in polyphonic c#."):
+ *
+ *  In this problem there are:
+ *  - 1 Santa
+ *  - 9 Reindeer
+ *  - 7 Elves
+ *
+ *  - When Santa and 9 Reindeer are available then they should be taken
+ *    (making them unavailable) and deliver presents. When they are
+ *    finished, Santa becomes available again and the Reindeers each go on
+ *    holiday, becoming available again when they come back from holiday.
+ *
+ *  - When Santa and 7 Elves are available then they should be taken
+ *    (making them unavailable) and meet in the study. When they are
+ *    finished, Santa becomes available again and the Elves each go to
+ *    work, becoming available again when they finish working.
+ *
+ * Note: this solution does not prioritise Reindeer over Elves if there are
+ * enough of either group to peform an action.
+ *
+ * This solution demonstrates using cowns and pools; requesting N resources
+ * from a Pool of N resources (but which N does not matter).
+ *
+ *****************************************************************************/
 use "group.verona"
 
 /* Interface to abstract the Reindeer and the Elf */
