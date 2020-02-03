@@ -1,8 +1,9 @@
 use "group.verona"
 
-interface Entity {
+/* Interface to abstract the Reindeer and the Elf */
+interface Helper {
   sleep(self: mut);
-  apply(self: mut);
+  act(self: mut);
 }
 
 class Reindeer {
@@ -14,16 +15,18 @@ class Reindeer {
     result
   }
 
+  /* Reindeer goes on holiday */
   sleep(self: mut) {
-    // This should be some sleep
     Builtin.print1("Reindeer {:#} is on holiday\n", self._id);
+    // Do some work to keep the Reindeer busy */
     var i = 0;
     while (i < 2000) {
       i = i + 1;
     };
   }
 
-  apply(self: mut) {
+  /* Reindeer delivers toys */
+  act(self: mut) {
     Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
   }
 }
@@ -37,16 +40,18 @@ class Elf {
     result
   }
 
+  /* Elf does some work */
   sleep(self: mut) {
-    // This should be some sleep
     Builtin.print1("Elf {:#} is working\n", self._id);
+    // Do some work to keep the Elf busy */
     var i = 0;
     while (i < 2000) {
       i = i + 1;
     };
   }
 
-  apply(self: mut) {
+  /* Elf meets in the study */
+  act(self: mut) {
     Builtin.print1("Elf {:#} is meeting in study\n", self._id);
   }
 }
@@ -55,37 +60,93 @@ class Santa {
   create(): cown[Santa] & imm {
     cown.create(new Santa)
   }
-}
 
-interface WorkshopAction[E: Entity] {
-  apply(self: imm, santa: Santa & mut, entities: Queue[Resource[E]] & iso);
-}
-
-class DeliverToys {
-  create(): DeliverToys & imm { Builtin.freeze(new DeliverToys) }
-  apply(self: imm, santa: Santa & mut,
-        entities: Queue[Resource[Reindeer]] & iso) {
+  meet_in_study(self: mut) {
     Builtin.print("Santa is meeting in study\n");
-    Workshop._dispatch_entities(entities);
+  }
+
+  deliver_toys(self: mut) {
+    Builtin.print("Santa is delivering toys\n");
   }
 }
 
+/*
+ * An action interface that for the workshop taking santa and one of the
+ * two pools of helpers.
+ */
+interface WorkshopAction[H: Helper] {
+  apply(self: imm, santa: cown[Santa] & imm, helpers: cown[Pool[H]] & imm);
+}
+
+/*
+ * Schedule a behaviour so that when Santa and all 9 Reindeer are free,
+ * the toys are delivered and then Reindeer go on holiday.
+ */
+class DeliverToys {
+  create(): DeliverToys & imm { Builtin.freeze(new DeliverToys) }
+  apply(self: imm, santa: cown[Santa] & imm,
+        reindeer: cown[Pool[Reindeer]] & imm) {
+    when(santa, var group = Pool.request(reindeer, 9)) {
+      Builtin.print("------------------------------------\n");
+      santa.deliver_toys();
+      Workshop._dispatch_helpers(group.extract());
+    };
+  }
+}
+
+/*
+ * Schedule a behaviour so that when Santa and 3 Elves are free,
+ * they meet in the study and then the same 3 Elves go to work.
+ */
 class MeetInStudy {
   create(): MeetInStudy & imm { Builtin.freeze(new MeetInStudy) }
-  apply(self: imm, santa: Santa & mut,
-        entities: Queue[Resource[Elf]] & iso)
-  {
-    Builtin.print("Santa is meeting in study\n");
-    Workshop._dispatch_entities(entities);
+  apply(self: imm, santa: cown[Santa] & imm,
+        elves: cown[Pool[Elf]] & imm) {
+    when(santa, var group = Pool.request(elves, 3)) {
+      Builtin.print("------------------------------------\n");
+      santa.meet_in_study();
+      Workshop._dispatch_helpers(group.extract());
+    };
   }
 }
 
 class Workshop {
+  /*
+   * Iterate over all the helpers in the queue and call their action and then
+   * have them asynchronously wait. Once they have finished waiting they will
+   * be returned to their Pool (as their wrapping Resource will be finalised).
+   */
+  _dispatch_helpers[H: Helper](qhelper: Queue[Resource[H]] & iso) {
+    match (mut-view qhelper).remove() {
+      var _: None => {}
+      var rhelper: Resource[H] => {
+        var helper = (mut-view rhelper).use();
+        (mut-view helper).act();
+        when () {
+          var helper = (mut-view rhelper).use();
+          (mut-view helper).sleep();
+        };
+        Workshop._dispatch_helpers(qhelper);
+      }
+    };
+  }
+
+  /*
+   * Repeatedly does an action and then re-schedules the same action.
+   */
+  act[H: Helper](action: WorkshopAction[H] & imm, santa: cown[Santa] & imm,
+                 pool: cown[Pool[H]] & imm) {
+    when() {
+      action.apply(santa, pool);
+      Workshop.act(action, santa, pool);
+    }
+  }
+
   create() {
     // create santa
     var santa = Santa.create();
 
-    // create the reindeer
+    // create the 9 reindeer
     var reindeer = Pool.create();
     var i = 0;
     while (i < 9) {
@@ -93,7 +154,7 @@ class Workshop {
       Pool.add(reindeer, Cell.create(Reindeer.create(i)));
     };
 
-    // create the elves
+    // create the 7 elves
     var elves = Pool.create();
     i = 0;
     while (i < 7) {
@@ -101,40 +162,26 @@ class Workshop {
       Pool.add(elves, Cell.create(Elf.create(i)));
     };
 
+    // Call two methods that will start the Workshop functioning.
     Builtin.print("Running the workshop\n");
-    Workshop.act(DeliverToys.create(), santa, reindeer, 9);
-    Workshop.act(MeetInStudy.create(), santa, elves, 3);
-  }
 
-  _dispatch_entities[E: Entity](qentity: Queue[Resource[E]] & iso) {
-    match (mut-view qentity).remove() {
-      var _: None => {}
-      var rentity: Resource[E] => {
-        var entity = (mut-view rentity).use();
-        (mut-view entity).apply();
-        when () {
-          var entity = (mut-view rentity).use();
-          (mut-view entity).sleep();
-        };
-        Workshop._dispatch_entities(qentity);
-      }
-    };
-  }
+    // Repeatedly schedules DeliverToys behaviours to request santa and
+    // 9 Reindeer from the ReindeerPool. Once the resources are acquired,
+    // the Reindeer will deliver toys and then, asynchronously, go on holiday.
+    // Finally, returning back to the original Pool of Reindeer.
+    Workshop.act(DeliverToys.create(), santa, reindeer);
 
-  act[E: Entity](action: WorkshopAction[E] & imm, santa: cown[Santa] & imm,
-                 pool: cown[Pool[E]] & imm, n: U64 & imm) {
-    when(santa, var group = Pool.request(pool, n)) {
-      Builtin.print("------------------------------------\n");
-      action.apply(santa, group.extract());
-    };
-    when() {
-      Workshop.act(action, santa, pool, n);
-    }
+    // Similarly, repeatedly schedule MeetInStudy behaviour to request
+    // santa and 3 out of 7 elves. Once the resources are acquired, the Elves
+    // will meet in the study and then, asynchronously, go to work. Finally,
+    // returning back to the original Pool of Elves.
+    Workshop.act(MeetInStudy.create(), santa, elves);
   }
 }
 
 class Main {
   main() {
+    // Set everything in motion.
     Workshop.create();
   }
 }
