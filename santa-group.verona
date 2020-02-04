@@ -13,7 +13,7 @@
  *    finished, Santa becomes available again and the Reindeers each go on
  *    holiday, becoming available again when they come back from holiday.
  *
- *  - When Santa and 7 Elves are available then they should be taken
+ *  - When Santa and 3 Elves are available then they should be taken
  *    (making them unavailable) and meet in the study. When they are
  *    finished, Santa becomes available again and the Elves each go to
  *    work, becoming available again when they finish working.
@@ -201,13 +201,13 @@ class Workshop {
     // Call two methods that will start the Workshop functioning.
     Builtin.print("Running the workshop\n");
 
-    // Repeatedly schedules DeliverToys behaviours to request santa and
+    // Repeatedly schedules deliver_toys behaviours to request santa and
     // 9 Reindeer from the ReindeerPool. Once the resources are acquired,
     // the Reindeer will deliver toys and then, asynchronously, go on holiday.
     // Finally, returning back to the original Pool of Reindeer.
     Workshop.deliver_toys(santa, reindeer);
 
-    // Similarly, repeatedly schedule MeetInStudy behaviour to request
+    // Similarly, repeatedly schedule meet_in_study behaviour to request
     // santa and 3 out of 7 elves. Once the resources are acquired, the Elves
     // will meet in the study and then, asynchronously, go to work. Finally,
     // returning back to the original Pool of Elves.
