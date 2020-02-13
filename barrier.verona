@@ -1,0 +1,75 @@
+use "list.verona"
+
+class Participant {
+  _barrier: cown[Barrier] & imm;
+  _id: U64 & imm;
+
+  create(id: U64 & imm, barrier: cown[Barrier] & imm): Participant & iso {
+    var result = new Participant;
+    result._barrier = barrier;
+    result._id = id;
+    result
+  }
+
+  pre(self: iso) {
+    when() {
+      Builtin.print1("Pre: {:#}\n", self._id);
+      Barrier.block(self._barrier, self);
+    }
+  }
+
+  post(self: iso) {
+    when() {
+      Builtin.print1("Post: {:#}\n", self._id);
+    }
+  }
+}
+
+class Barrier {
+  _ps: Queue[Participant] & iso;
+  _n: U64 & imm;
+
+  for(n: U64 & imm): cown[Barrier] & imm {
+    var result = new Barrier;
+    result._ps = Queue.create(0);
+    result._n = n;
+    cown.create(result)
+  }
+
+  _dispatch(ps: Queue[Participant] & iso) {
+    match((mut-view ps).remove()) {
+      var _: None => {} // we're done
+      var p: Participant => {
+        p.post();
+        Barrier._dispatch(ps);
+      }
+    }
+  }
+
+  block(barrier: cown[Barrier] & imm, p: Participant & iso) {
+    when(barrier) {
+      (mut-view (barrier._ps)).add(p);
+      barrier._n = barrier._n - 1;
+      if (barrier._n == 0) {
+        Barrier._dispatch(barrier._ps = Queue.create(0));
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var barrier = Barrier.for(5);
+    var p1 = Participant.create(1, barrier);
+    var p2 = Participant.create(2, barrier);
+    var p3 = Participant.create(3, barrier);
+    var p4 = Participant.create(4, barrier);
+    var p5 = Participant.create(5, barrier);
+
+    p1.pre();
+    p2.pre();
+    p3.pre();
+    p4.pre();
+    p5.pre();
+  }
+}
