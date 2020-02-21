@@ -1,0 +1,75 @@
+/* SD, on 21.02.2020
+ *The simplest way for barrier synchronization
+ *
+ * We have 3 participants; and 2 phases:
+ * In the before-barrier phase, participants work separately and
+ * concurrently.
+ * Then they wait until all of them have reached the barrier
+ * Then, in the after-barrier phase they again work separately and
+ * concurrently.
+ *
+ * The implementation uses one promise per participant.
+ * The main program creates three participants, and gives
+  * to each of them one handle and three pomises. 
+  * After the pre-phase, the participant fullfills the handle,
+  * and then when's on the three promises  */
+ 
+  class Participant
+  {
+    _pr: Promise[None] & imm;
+     _handle1: cown[None] & imm;
+     _handle2: cown[None] & imm;
+     _handle3: cown[None] & imm;
+    
+     create(i:U64 & imm, pr1:Promise[None] & imm, pr2:Promise[None] & imm, pr3:Promise[None] & imm ) : Participant & iso
+    {
+      var p = new Participant;
+      Builtin.print1("created participant {}\n", i);
+      p._id=i;
+      p._pr = pr1;
+      p._handle1 = pr1.wait_handle();
+      p._handle2 = pr2.wait_handle();
+      p._handle3 = pr3.wait_handle();
+      p
+    }
+
+    run(self: imm )
+    {   var j  = self._id;
+        when(){
+                   Builtin.print1("---- part {} reached barrier\n", j);
+                   // now the pericipant fullfills their promise
+                  (self._pr).fulfill(new None);
+         };
+         var p1=self._pr1;
+         var p2=self._pr2;
+         var p3=self._pr3;
+         when( p1,p2, p3 ){
+                Builtin.print1("---- part {} after barrier\n", j);
+        };
+        }
+}
+
+ 
+
+
+  class Main
+ {
+    main()
+    {
+      var pr1 = Promise.create();
+      var pr2 = Promise.create();
+      var pr3 = Promise.create();
+     
+
+      var pa1 = Participant.create(10,pr1,pr2,pr3);
+      var pa2 = Participant.create(10,pr2,pr1,pr3);
+      var pa3 = Participant.create(10,pr3,pr2,pr1);
+
+      Builtin.print("created three participants\n");
+      
+      pa1.run();
+      pa2.run();
+      pa3.run()
+
+   }
+}
