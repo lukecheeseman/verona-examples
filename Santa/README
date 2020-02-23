@@ -1,0 +1,20 @@
+
+The Santa problem was proposed in 1994, J. A. Trono. A new exercise in 
+concurrency. SIGCSE Bull., 26(3):8–10, 1994.
+
+In this problem there are:
+ - 1 Santa
+ - 9 Reindeer
+ - 7 Elves
+
+- When Santa and 9 Reindeer are available then they should be taken
+  (making them unavailable) and deliver presents. When they are
+  finished, Santa becomes available again and the Reindeers each go on
+  holiday, becoming available again when they come back from holiday.
+ 
+ - When Santa and 3 Elves are available then they should be taken
+   (making them unavailable) and meet in the study. When they are
+   finished, Santa becomes available again and the Elves each go to
+   work, becoming available again when they finish working.  
+
+A solution using chords was described in J. A. Trono. A new exercise in concurrency. SIGCSE Bull., 26(3):8–10, 1994.

@@ -1,4 +1,5 @@
-/* The simplest way for barrier synchronization
+/* SD, on 21.02.2020
+ *The simplest way for barrier synchronization
  * We have 3 participants; and 2 phases:
  * In the before-barrier phase, participants work separately and
  * concurrently.
@@ -28,13 +29,12 @@ class Participant
   }
 
   runAfterBarrier(self: imm)
-  {   var j  = self.id;
-      var myid = self.id;
+  {   var myid = self.id;
       var myidle = self.idle;
       when(){
          // the following two lines so that some work is done
          var d  = Delay.create( );
-         var k = (mut-view d).delayAfterBarrier(myid,myidle);
+         var k = (mut-view d).delayAfterBarrier(myid,myid);
          Builtin.print1("---- part {} is finished\n", j)
        };
   }

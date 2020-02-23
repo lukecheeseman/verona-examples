@@ -1,0 +1,188 @@
+use "list.verona"
+
+/*
+ * Example of how several behaviours can be scheduled to coordinate
+ * and meet at a certain point.
+ *
+ * Main creates a Barrier, each Participant notifies a Barrier the
+ * Participant is created. This increments the number of expected
+ * Participants for a blocking call.
+ *
+ * Participants do some work (pre) then call block on the Barrier and
+ * the Participant passes itself to the Barrier. A Barrier aggregates
+ * the Participants together until all Participants have called block.
+ *
+ * Once all Participants have blocked, the Barrier will notify
+ * all Participants to do some more work (post).
+ */
+
+class Participant {
+  _barrier: cown[Barrier] & imm;
+  _id: U64 & imm;
+  _idletime: U64 & imm;
+  
+  create(id: U64 & imm, idletime: U64 & imm,  barrier: cown[Barrier] & imm): Participant & iso {
+    var result = new Participant;
+    result._barrier = barrier;
+    result._id = id;
+    result._idletime = idletime;
+    Barrier.notify(barrier);    
+    result
+  }
+  
+   make(id: U64 & imm, idletime: U64 & imm,  barrier: cown[Barrier] & imm): Participant   {
+    var result = new Participant;
+    result._barrier = barrier;
+    result._id = id;
+    result._idletime = idletime;
+    Barrier.enter(barrier,self);    
+    result
+  }
+
+  // Some asynchronous work to do and then block, waiting for all Participants
+  // to reach the same point.
+  pre(self: iso) {
+      var myid = self._id;
+      var myidle = self._idletime;
+      Builtin.print1("---- part {} starts pre-phase \n", myid);
+      when() {
+         var d  = Delay.create( );
+         var k = (mut-view d).delayBeforeBarrier(myid,myidle);
+         Builtin.print1("---- part {} finishes pre-phase \n", myid);
+         Barrier.block(self._barrier, self) 
+    }
+  }
+
+  // Some asynchronous work to do afterwards
+ //  post(self: iso, psNew: Queue[Participant] & iso) {
+    post(self: iso){
+      var myid = self._id;
+      var myidle = self._idletime;
+      Builtin.print1("---- part {} starts post-phase \n", myid);
+      when() {
+         var d  = Delay.create( );
+         var k = (mut-view d).delayAfterBarrier(myid,myidle);
+         Builtin.print1("---- part {}  finishes post-phase \n", myid);
+    }
+}
+
+}
+
+
+/* This creates some work and some output */
+class Delay
+{
+
+    delayBeforeBarrier(self: mut, id: U64 &imm, i: U64 &imm): U64&imm
+        { // self.printpart(id,id);
+           Builtin.print1("    part {} before \n", id);
+           if (i<3)
+               { 200  }
+           else
+               { var i1=self.delayBeforeBarrier(id,i-1);
+                 var i2=self.delayBeforeBarrier(id,i-2);
+                 i1  }
+        }
+
+    delayAfterBarrier(self: mut, id: U64 &imm, i: U64 &imm): U64&imm
+            { // self.printpart(id,id);
+               Builtin.print1("    part {} after \n", id);
+               if (i<3)
+                   { 200  }
+               else
+                   { var i1=self.delayAfterBarrier(id,i-1);
+                     i1  }
+            }
+
+    create( ): Delay & iso
+      {
+        var d = new Delay;
+        d
+        }
+
+}
+
+
+class Barrier {
+  _ps: Queue[Participant] & iso;
+  _n: U64 & imm;
+  _rounds: U64 & imm;
+  
+   
+
+  create(rounds:U64 & imm): cown[Barrier] & imm {
+    var result = new Barrier;
+    result._ps = Queue.create(0);
+    result._n = 0;
+    result._rounds = rounds;
+    cown.create(result)
+  }
+
+  // Increase the counter for expected participants to call block.
+  notify(barrier: cown[Barrier] & imm) {
+    when(barrier) {
+      barrier._n = barrier._n + 1;
+    }
+  }
+  
+  enter(barrier: cown[Barrier] & imm) {
+    when(barrier) {
+      barrier._n = barrier._n + 1;
+    }
+  }
+
+  // Call post on all blocked Participants.
+  _dispatch(self: mut, ps: Queue[Participant] & iso, psNew: Queue[Participant] & iso) {
+    var p1 = (mut-view ps).remove();
+    match(p1) {
+      var _: None => {  self._rounds = self._rounds-1;  // we have notified everybody
+                                   } 
+      var p: Participant => {
+        p.post(); // (psNew);
+        self._dispatch(ps);
+      }
+  }
+       
+  }
+
+  // Block a Participant, decrementing the count for expected number
+  // of Participants to call block. Once all Participants have called
+  // block, dispatch all Partcipants.
+  block(barrier: cown[Barrier] & imm, p: Participant & iso) {
+    when(barrier) {
+      (mut-view (barrier._ps)).add(p);
+      barrier._n = barrier._n - 1;
+      if (barrier._n == 0) {
+        Builtin.print("=== All participants have completed pre ====\n");
+        barrier._dispatch(barrier._ps = Queue.create(0), Queue.create(0)) 
+      }
+    }
+  }
+}
+
+
+
+class Main {
+  main() {
+    var rounds = 3;
+    var barrier = Barrier.create(rounds);
+    var p1 = Participant.create(1, 5, barrier);
+    var p2 = Participant.create(2, 3, barrier);
+    var p3 = Participant.create(3, 6, barrier);
+    var p4 = Participant.create(4, 3, barrier);
+    var p5 = Participant.create(5, 4, barrier);
+    
+    barrier.finished(); // to say all participants have been entered
+    
+    // SD: The participants should be put in a list by barrier, 
+    
+      p1.pre(); 
+      p2.pre();
+      p3.pre();
+      p4.pre();
+      p5.pre(); 
+    
+}  
+}
+
+    

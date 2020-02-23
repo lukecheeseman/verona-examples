@@ -1,0 +1,36 @@
+/***************************************************************
+*                Barrier synchronization                       *
+*                                                              *
+* Demonstrates how several behaviours can be scheduled to coordinate
+* and meet at a certain point.
+In more detial;
+
+We have n participants. they work in two phases:
+    * In phase One, all participants do some some work (pre) concurrently.
+
+    * When all partcipants have completed their pre-work, they move to phase
+      Two.
+
+   * In phase Two all participants do their post-work concurrently.
+
+We propose four different solutions
+
+- barrier_with_Promise: We use one promise per participant.
+  The main program creates three participants, and gives
+  to each of them one handle and three promises. The participant
+  executes its pre-phase, and at the fulfills the handle, and
+  then when-s on the three promises.
+
+- barrier-naive: One cown per participant.
+  The main program spawns the pre-barrier phase for each participant
+  when-ing on their cown. Then it when-s on all the cowns, and spawns
+  the post-barrier phase for all participants.
+
+- barrier-with-loop: ???
+
+- barrier: Main creates a Barrier, and n Participants. Participants
+  notify the Barrier upon creation. Participants do pre-some work;
+  then call block on the Barrier and pass themselves to the Barrier.
+  The Barrier aggregates the Participants until all Participants have
+  called block. When this happens, the Barrier will notifies the
+  Participants to do the post-work.

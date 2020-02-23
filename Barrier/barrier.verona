@@ -12,38 +12,86 @@ use "list.verona"
  * the Participant passes itself to the Barrier. A Barrier aggregates
  * the Participants together until all Participants have called block.
  *
- * Once all Participants have blocked, the Barreir will dispatch
+ * Once all Participants have blocked, the Barrier will notify
  * all Participants to do some more work (post).
  */
 
 class Participant {
   _barrier: cown[Barrier] & imm;
   _id: U64 & imm;
-
-  create(id: U64 & imm, barrier: cown[Barrier] & imm): Participant & iso {
+  _idletime: U64 & imm;
+  
+  create(id: U64 & imm, idletime: U64 & imm,  barrier: cown[Barrier] & imm): Participant & iso {
     var result = new Participant;
-    Barrier.notify(barrier);
     result._barrier = barrier;
     result._id = id;
+    result._idletime = idletime;
+    Barrier.notify(barrier);    
     result
   }
 
   // Some asynchronous work to do and then block, waiting for all Participants
   // to reach the same point.
   pre(self: iso) {
-    when() {
-      Builtin.print1("Pre: {:#}\n", self._id);
-      Barrier.block(self._barrier, self);
+      var myid = self._id;
+      var myidle = self._idletime;
+      Builtin.print1("---- part {} starts pre-phase \n", myid);
+      when() {
+         var d  = Delay.create( );
+         var k = (mut-view d).delayBeforeBarrier(myid,myidle);
+         Builtin.print1("---- part {} finishes pre-phase \n", myid);
+         Barrier.block(self._barrier, self) 
     }
   }
 
   // Some asynchronous work to do afterwards
   post(self: iso) {
-    when() {
-      Builtin.print1("Post: {:#}\n", self._id);
+      var myid = self._id;
+      var myidle = self._idletime;
+      Builtin.print1("---- part {} starts post-phase \n", myid);
+      when() {
+         var d  = Delay.create( );
+         var k = (mut-view d).delayAfterBarrier(myid,myidle);
+         Builtin.print1("---- part {}  finishes post-phase \n", myid);
     }
-  }
 }
+
+}
+
+
+/* This creates some work and some output */
+class Delay
+{
+
+    delayBeforeBarrier(self: mut, id: U64 &imm, i: U64 &imm): U64&imm
+        { // self.printpart(id,id);
+           Builtin.print1("    part {} before \n", id);
+           if (i<3)
+               { 200  }
+           else
+               { var i1=self.delayBeforeBarrier(id,i-1);
+                 var i2=self.delayBeforeBarrier(id,i-2);
+                 i1  }
+        }
+
+    delayAfterBarrier(self: mut, id: U64 &imm, i: U64 &imm): U64&imm
+            { // self.printpart(id,id);
+               Builtin.print1("    part {} after \n", id);
+               if (i<3)
+                   { 200  }
+               else
+                   { var i1=self.delayAfterBarrier(id,i-1);
+                     i1  }
+            }
+
+    create( ): Delay & iso
+      {
+        var d = new Delay;
+        d
+        }
+
+}
+
 
 class Barrier {
   _ps: Queue[Participant] & iso;
@@ -82,6 +130,7 @@ class Barrier {
       (mut-view (barrier._ps)).add(p);
       barrier._n = barrier._n - 1;
       if (barrier._n == 0) {
+        Builtin.print("=== All participants have completed pre ====\n");
         Barrier._dispatch(barrier._ps = Queue.create(0));
       }
     }
@@ -91,11 +140,11 @@ class Barrier {
 class Main {
   main() {
     var barrier = Barrier.create();
-    var p1 = Participant.create(1, barrier);
-    var p2 = Participant.create(2, barrier);
-    var p3 = Participant.create(3, barrier);
-    var p4 = Participant.create(4, barrier);
-    var p5 = Participant.create(5, barrier);
+    var p1 = Participant.create(1, 5, barrier);
+    var p2 = Participant.create(2, 3, barrier);
+    var p3 = Participant.create(3, 6, barrier);
+    var p4 = Participant.create(4, 3, barrier);
+    var p5 = Participant.create(5, 5, barrier);
 
     p1.pre();
     p2.pre();
