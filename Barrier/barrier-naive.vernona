@@ -9,7 +9,10 @@
  * The implementation uses one cown per participant.
  * The main program spawns the pre-barrier phase for each of them
  * given them their cown. Then it when-s on all the cowns, and spawns
- * the after-barrier phase for all of them.   */
+ * the after-barrier phase for all of them.  
+ * NOTE
+ *   requires that "runBeforeBarrier is fully synchronous,
+ *   any when spawned within it might run after the barrier is reached */ 
 
 
 class Participant
