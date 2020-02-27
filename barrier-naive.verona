@@ -1,0 +1,76 @@
+/*
+ * A simple way for barrier synchronization
+ * We have 3 participants; and 2 phases:
+ *  - Before-barrier phase: participants work separately and concurrently.
+ *    Then they wait until all of them have reached the barrier.
+ *  - After-barrier phase: participants work separately and concurrently.
+ *
+ * The implementation uses one cown per participant.
+ * The main program spawns the pre-barrier phase for each of them
+ * given them their cown. Then it when-s on all the cowns, and spawns
+ * the after-barrier phase for all of them.
+ */
+
+class Participant
+{
+  _id: U64 & imm;
+  _idletime: U64 & imm;
+
+  create(id: U64 & imm, idletime: U64 & imm): Participant & imm {
+    var p = new Participant;
+    Builtin.print1("created participant {}\n", id);
+    p._id = id;
+    p._idletime = idletime;
+    Builtin.freeze(p)
+  }
+
+  delayBeforeBarrier(self: imm, i: U64 & imm) {
+    Builtin.print1("    part {} before \n", self._id);
+    if (i >= 3) {
+      self.delayBeforeBarrier(i - 1);
+    }
+  }
+
+  delayAfterBarrier(self: imm, i: U64 & imm) {
+    Builtin.print1("    part {} after \n", self._id);
+    if (i >= 3) {
+      self.delayBeforeBarrier(i - 1);
+    }
+  }
+
+  runBeforeBarrier(self: imm) {
+    self.delayBeforeBarrier(self._idletime);
+    Builtin.print1("---- part {} reached barrier\n", self._id)
+  }
+
+  runAfterBarrier(self: imm) {
+    when(){
+      self.delayAfterBarrier(self._idletime);
+      Builtin.print1("---- part {} is finished\n", self._id)
+    };
+  }
+}
+
+class Main {
+  main() {
+    var c1 = cown.create(new None);
+    var c2 = cown.create(new None);
+    var c3 = cown.create(new None);
+
+    var p1 = Participant.create(10,4);
+    var p2 = Participant.create(30,8);
+    var p3 = Participant.create(60,5);
+    Builtin.print("\n====== Created three participants ======\n");
+
+    when(c1) { p1.runBeforeBarrier(); };
+    when(c2) { p2.runBeforeBarrier(); };
+    when(c3) { p3.runBeforeBarrier(); };
+
+    when(c1, c2, c3){
+      Builtin.print("\n====== All three have reached barrier ======\n");
+      when() { p1.runAfterBarrier(); };
+      when() { p2.runAfterBarrier(); };
+      when() { p3.runAfterBarrier(); }
+    }
+  }
+}
