@@ -1,24 +1,48 @@
+/* Carpark Example
+ *
+ * The entities of the example are:
+ *   - car park control: maintains a count of the number of cars in the carpark
+ *     and its maximum capacity. When a car tries to arrive, if there is a space
+ *     then the car arrives and the count is increased, otherwise the behaviour
+ *     waits for a signall that state of the carpark has changed (a car has
+ *     left) and then arrives. This is similar for when a car tries to depart
+ *     except that it is when the carpark is empty and not full that depart must
+ *     wait.
+ *   - Arrive and Depart, two generators that create arrive and depart events
+ *     for the car park controller
+ *
+ * These are tied together in main, and arrive and depart generator share a
+ * carpark control.
+ */
+
 class CarParkControl {
-  _count: U64;
-  _capacity: U64;
+  _count: U64 & imm;
+  _capacity: U64 & imm;
+
+  // signal to wait on when there are either too many cars and another cannot
+  // arrive or not enough cars and none can depart.
   _condition: Promise[None] & iso;
 
-  create(capacity: U64): CarParkControl & iso {
+  create(capacity: U64 & imm): cown[CarParkControl] & imm {
     var result = new CarParkControl;
     result._count = 0;
     result._capacity = capacity;
     result._condition = Promise.create();
-    result
+    cown.create(result)
   }
 
-  arrive(control: cown[CarParkControl]) {
+  arrive(control: cown[CarParkControl] & imm) {
     when (var c = control) {
       if (c._count) == (c._capacity) {
+        // Too many cars so wait until a car leaves, the behaviour will be
+        // signalled when a car leaves.
         var r = (mut-view (c._condition)).wait_handle();
         when (r) {
           CarParkControl.arrive(control);
         }
       } else {
+        // increase the count and notify any waiting depart events that are
+        // waiting that the state of the world has changed.
         c._count = c._count + 1;
         Builtin.print1("+: {:#}\n", c._count);
         var notify = (c._condition = Promise.create());
@@ -27,16 +51,19 @@ class CarParkControl {
     }
   }
 
-  depart(control: cown[CarParkControl]) {
+  depart(control: cown[CarParkControl] & imm) {
     when (var c = control) {
       if (c._count) == 0 {
         var r = (mut-view (c._condition)).wait_handle();
+        // must wait until there are cars that can depart
         when (r) {
           CarParkControl.depart(control);
         }
       } else {
         c._count = c._count - 1;
         Builtin.print1("-: {:#}\n", c._count);
+        // signal any waiting arrive behaviours that the sate of the car park
+        // has changed
         var notify = (c._condition = Promise.create());
         notify.fulfill(new None);
       };
@@ -44,10 +71,11 @@ class CarParkControl {
   }
 }
 
+// Generator to create 10 arrivals
 class Arrivals {
-  _control: cown[CarParkControl];
+  _control: cown[CarParkControl] & imm;
 
-  create(control: cown[CarParkControl]): Arrivals & iso {
+  create(control: cown[CarParkControl] & imm): Arrivals & iso {
     var result = new Arrivals;
     result._control = control;
     result
@@ -62,10 +90,11 @@ class Arrivals {
   }
 }
 
+// Generator to create 10 departures
 class Departures {
-  _control: cown[CarParkControl];
+  _control: cown[CarParkControl] & imm;
 
-  create(control: cown[CarParkControl]): Departures & iso {
+  create(control: cown[CarParkControl] & imm): Departures & iso {
     var result = new Departures;
     result._control = control;
     result
@@ -82,10 +111,12 @@ class Departures {
 
 class Main {
   main() {
-    var control = cown(CarParkControl.create(2));
+    // create the system
+    var control = CarParkControl.create(2);
     var arrivals = Arrivals.create(control);
     var departures = Departures.create(control);
 
+    // asynchronously create arrivals and departures
     when () {
       (mut-view arrivals).run();
     };
