@@ -1,0 +1,79 @@
+/* Barrier with promises
+ *
+ * This example creates a synchronisation point between 3 participants. Each participant has a
+ * pre method that returns a promise of participant. When the pre functionality (must be
+ * asynchronous) finishes, the promise is fulfilled with the participant (this is currently
+ * a cell of partricipant because we don't want to lose the iso-ness of the participant).
+ *
+ * The synchronisation point is a when on the promises of all 3 participants. Once all have
+ * been fulfilled, then they have all finished pre. Now post can be run on all three objects
+ * at the same time.
+ *
+ * Observations: this is explicit coordination by a third-party, somebody has to call pre
+ * synchronise the 3 objects participants and then call post.
+ */
+
+class Cell[T] {
+  _data: (T & iso) | (None & imm);
+
+  create(data: T & iso): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
+    result
+  }
+
+  extract(self: mut): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
+  }
+}
+
+class Participant {
+  _id: U64 & imm;
+
+  create(id: U64 & imm): Participant & iso {
+    var result = new Participant;
+    result._id = id;
+    result
+  }
+
+  pre(self: iso): cown[Cell[Participant]] & imm {
+    var promise = Promise.create();
+    var wait = (mut-view promise).wait_handle();
+    when() {
+      // This is the asynchronous pre functionallity
+      Builtin.print1("Pre: {:#}\n", self._id);
+      promise.fulfill(Cell.create(self));
+    };
+    wait
+  }
+
+  post(self: iso) {
+    when() {
+      // This is the asynchronous post functionality
+      Builtin.print1("Post: {:#}\n", self._id);
+    }
+  }
+}
+
+class Main {
+  main() {
+    var p1 = Participant.create(1);
+    var p2 = Participant.create(2);
+    var p3 = Participant.create(3);
+
+    // Synchronise p1, p2 and p3. Each return a promise of themselves which is then
+    // used to call post on all 3 objects at the same time.
+    when(var p1 = p1.pre(), var p2 = p2.pre(), var p3 = p3.pre()) {
+      Builtin.print("------Barrier------\n");
+      match (p1.extract()) {
+        var p: Participant => p.post(),
+      };
+      match (p2.extract()) {
+        var p: Participant => p.post(),
+      };
+      match (p3.extract()) {
+        var p: Participant => p.post(),
+      }
+    }
+  }
+}
