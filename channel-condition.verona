@@ -1,77 +1,27 @@
-class Node[T]
-{
-  value: (T & iso) | (None & imm);
-  next: (Node[T] & mut) | (None & imm);
-}
+use "list.verona"
 
-class Queue[T]
-{
-  hd: Node[T] & mut;
-  tl: Node[T] & mut;
-  none: None & imm;  // Fix when we have singletons
-
-  create(): Queue[T] & iso
-  {
-    var q = new Queue;
-    var n = new Node in q;
-    q.hd = n;
-    q.tl = n;
-    q.none = freeze (new None);
-    n.next = q.none;
-    n.value = q.none;
-    q
-  }
-
-  add(self: mut, v: T & iso)
-  {
-    var n_tail = new Node in self;
-    n_tail.next = self.none;
-    n_tail.value = self.none;
-
-    var old_tl = self.tl;
-    old_tl.value = v;
-    old_tl.next = n_tail;
-    self.tl = n_tail;
-  }
-
-  remove(self: mut): (T & iso) | (None & imm)
-  {
-    var h = self.hd;
-    match (h.value = self.none)
-    {
-      var a: None => a,
-      var v: T =>
-      {
-        match (h.next)
-        {
-          var a: None => self.none, // Should be unreachable, but not enforced by type system.
-          var b: Node[T] =>
-          {
-            self.hd = b;
-            v
-          }
-        }
-      }
-    }
-  }
-}
-
-class Box[T] {
-
-  _data: (T & iso) | (None & imm);
-
-  create(data: T & iso): Box[T] & iso {
-    var result = new Box;
-    result._data = data;
-    result
-  }
-
-  data(self: mut): (T & iso) | (None & imm) {
-    self._data = freeze (new None)
-  }
-}
+/* Channel built using a condition variable or signal:
+ *
+ * A condition object is wrapper on top of a promise, behaviours can be
+ * triggered when a codition has been met by when'ing on the cown returned
+ * by await. When the the condition vairable is signalled, the current
+ * promise is fulfilled and replaced with a new promise. Any behaviours that
+ * we waiting for the condition previouslt can now run.
+ *
+ * A channel is built on top of this by having a channel use a condition
+ * variable that any unfulfilled read waits on, when wite happens (changing
+ * the state of the channel) all waiting reads are signalled and all try to
+ * read values. Any reads that did not succesfully read a value, wait again
+ * on the condition variable.
+ *
+ * This example then uses a single producer and consumer to write and read
+ * values into and out of the channel
+ */
 
 class Condition {
+  /* Used to signal/wake up and behaviours that are waiting for this condition
+   * to be satisfied
+   */
   _promise: Promise[None] & iso;
 
   create(): Condition & iso {
@@ -80,7 +30,7 @@ class Condition {
     result
   }
 
-  await(self: mut): cown[None] {
+  await(self: mut): cown[None] & imm {
     (mut-view (self._promise)).wait_handle()
   }
 
@@ -89,31 +39,55 @@ class Condition {
   }
 }
 
-class Channel[T] {
-  _queue: Queue[Box[T & iso]] & iso;
-  _condition: Condition & iso;
+/* Cell object so that values can be sent around in promises and extracted
+ * later without losing iso access to them */
+class Cell[T] {
+  _data: (T & iso) | (None & imm);
 
-  create(): cown[Channel[T]] {
-    var result = new Channel;
-    result._queue = Queue.create();
-    result._condition = Condition.create();
-    cown(result)
+  create(data: T & iso): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
+    result
   }
 
-  write(channel: cown[Channel[T]], value: T & iso) {
+  extract(self: mut): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
+  }
+}
+
+class Channel[T] {
+  _queue: Queue[Cell[T]] & iso;
+  _condition: Condition & iso;
+
+  create(): cown[Channel[T]] & imm {
+    var result = new Channel;
+    result._queue = Queue.create(0);
+    result._condition = Condition.create();
+    cown.create(result)
+  }
+
+  /* write a value into the channel and signal any waiting reads that the state
+   * of the channel has changed. */
+  write(channel: cown[Channel[T]] & imm, value: T & iso) {
     when (var c = channel) {
-      (mut-view (c._queue)).add(Box.create(value));
+      (mut-view (c._queue)).add(Cell.create(value));
       (mut-view (c._condition)).signal();
     }
   }
 
-  _read(channel: cown[Channel[T]], p: Promise[Box[T]] & iso) {
+  _read(channel: cown[Channel[T]] & imm, p: Promise[Cell[T]] & iso) {
     when (var c = channel) {
       var value = (mut-view (c._queue)).remove();
       match (value) {
-        var v: Box[T] => {
+        /* if there is a value in the channel then the read can be
+         * satisfied. */
+        var v: Cell[T] => {
           p.fulfill(v);
         }
+        /* if there is no value, this can happen as a read has taken place
+         * when no value has be written or because multiple reads were signalled
+         * at once but there were not enough values to satisfy all of them, then
+         * another read is scheduled for when the channels state changes. */
         var _: None => {
           when (var r = (mut-view (c._condition)).await()) {
             Channel._read(channel, p);
@@ -123,7 +97,8 @@ class Channel[T] {
     }
   }
 
-  read(channel: cown[Channel[T]]): cown[Box[T]] {
+  /* create the promise of a value */
+  read(channel: cown[Channel[T]] & imm): cown[Cell[T]] & imm {
     var p = Promise.create();
     var r = (mut-view p).wait_handle();
     Channel._read(channel, p);
@@ -131,10 +106,11 @@ class Channel[T] {
   }
 }
 
+/* Producer for writing into the channel */
 class Producer[T: iso] {
-  _channel: cown[Channel[T]];
+  _channel: cown[Channel[T]] & imm;
 
-  create(channel: cown[Channel[T]]): Producer[T] & iso {
+  create(channel: cown[Channel[T]] & imm): Producer[T] & iso {
     var result = new Producer;
     result._channel = channel;
     result
@@ -145,22 +121,27 @@ class Producer[T: iso] {
   }
 }
 
+/* Consumer for reading values from the channel */
 class Consumer[T: iso] {
-  _channel: cown[Channel[T]];
+  _channel: cown[Channel[T]] & imm;
 
-  create(channel: cown[Channel[T]]): Consumer[T] & iso {
+  create(channel: cown[Channel[T]] & imm): Consumer[T] & iso {
     var result = new Consumer;
     result._channel = channel;
     result
   }
 
   consume(self: mut) {
-    when(var box = Channel.read(self._channel)) {
-      Builtin.print1("Hello, {:#}\n", box);
+    when(var cell = Channel.read(self._channel)) {
+      match (cell.extract()) {
+        var n: None => Builtin.print("Got None\n"),
+        var o: U64Obj => Builtin.print1("Got {:#}\n", o.v),
+      }
     }
   }
 }
 
+/* Create a producer and consumer that share a channel */
 class Main {
   main() {
     var channel = Channel.create();
