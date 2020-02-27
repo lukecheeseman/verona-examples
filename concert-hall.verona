@@ -1,5 +1,17 @@
+/* Concert hall boooking example
+ *
+ * A central computer holds three seats that can be reserved once.
+ *
+ * A terminal holds a reference to a cown of a central computer, the terminal
+ * can attempt to book a seat and reports whether the reservation was succesful.
+ *
+ * The example creates two terminals that share a central computer, the
+ * two terminals run asyncrhonously and both try to book all three seats.
+ */
+
 class Seat {
-  _reserved: U64;
+  // reserved is a boolean value that can only be set once
+  _reserved: U64 & imm;
 
   create(): Seat & iso {
     var result = new Seat;
@@ -7,26 +19,30 @@ class Seat {
     result
   }
 
-  reserve(self: mut): U64 {
+  // reserve the seat and report whether it was sucessfully reserved
+  reserve(self: mut): U64 & imm {
     1 - (self._reserved = 1)
   }
-
 }
 
+// Central computer has three seats, currently there are no maps
+// so the seats are 3 fields.
 class CentralComputer {
   _s1: Seat & iso;
   _s2: Seat & iso;
   _s3: Seat & iso;
 
-  create(): cown[CentralComputer] {
+  create(): cown[CentralComputer] & imm {
     var result = new CentralComputer;
     result._s1 = Seat.create();
     result._s2 = Seat.create();
     result._s3 = Seat.create();
-    cown(result)
+    cown.create(result)
   }
 
-  reserve(self: mut, seat: U64): U64 {
+  // attempt to reserve a seat and report wether it was succesfully
+  // reserved or not
+  reserve(self: mut, seat: U64 & imm): U64 & imm {
     if seat == 1 {
       (mut-view (self._s1)).reserve()
     } else {
@@ -43,18 +59,20 @@ class CentralComputer {
   }
 }
 
+// Terminal attempts to make bookings on a central computer and reports whether
+// a seat reservation was succesful.
 class Terminal {
-  _computer: cown[CentralComputer];
-  _id: U64;
+  _computer: cown[CentralComputer] & imm;
+  _id: U64 & imm;
 
-  create(id: U64, computer: cown[CentralComputer]): Terminal & iso {
+  create(id: U64 & imm, computer: cown[CentralComputer] & imm): Terminal & iso {
     var result = new Terminal;
     result._computer = computer;
     result._id = id;
     result
   }
 
-  reserve(self: mut, seat: U64) {
+  reserve(self: mut, seat: U64 & imm) {
     var tid = self._id;
     when (var c = self._computer) {
       if ((mut-view c).reserve(seat)) {
@@ -66,6 +84,8 @@ class Terminal {
   }
 }
 
+// Build the example out of two terminals that share a central computer. The
+// terminals run asynchronously and both try to book all three seats.
 class Main {
   main() {
     var cc = CentralComputer.create();
