@@ -6,9 +6,10 @@
  *  - After-barrier phase: participants work separately and concurrently.
  *
  * The implementation uses one cown per participant.
- * The main program spawns the pre-barrier phase for each of them
- * given them their cown. Then it when-s on all the cowns, and spawns
- * the after-barrier phase for all of them.
+ * The main program spawns the pre-barrier phase for each of them given them
+ * their cown.
+ * Then it when-s on all the cowns, and spawns the after-barrier phase for all
+ * of them.
  */
 
 class Participant
@@ -53,19 +54,27 @@ class Participant
 
 class Main {
   main() {
-    var c1 = cown.create(new None);
-    var c2 = cown.create(new None);
-    var c3 = cown.create(new None);
-
     var p1 = Participant.create(10,4);
     var p2 = Participant.create(30,8);
     var p3 = Participant.create(60,5);
     Builtin.print("\n====== Created three participants ======\n");
 
+    var c1 = cown.create(new None);
+    var c2 = cown.create(new None);
+    var c3 = cown.create(new None);
+
+    /* associate each of the participants with a seperate cown, obtaining
+     * access to it and preventing the later, post barrier, behaviour from
+     * running.
+     */
     when(c1) { p1.runBeforeBarrier(); };
     when(c2) { p2.runBeforeBarrier(); };
     when(c3) { p3.runBeforeBarrier(); };
 
+    /* it is necessary for this when to be dependent on the 3 cowns here,
+     * listing them as resources necessary creates a causal relation that means
+     * the 3 earlier behaviours _must_ run before this behaviour.
+     */
     when(c1, c2, c3){
       Builtin.print("\n====== All three have reached barrier ======\n");
       when() { p1.runAfterBarrier(); };
