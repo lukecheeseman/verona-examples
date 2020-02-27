@@ -1,0 +1,93 @@
+/* Barrier with promises
+ *
+ * Create three participants that synchronise at the same point in a method, here scheduling
+ * is done internally by the participant.
+ *
+ * A signal object has a count of how many waiters it expects. Waiting on a signal decrements
+ * the count and returns a cown for the waiter to wait on. When the internal signal is made
+ * available (i.e. the promise is fulfilled), all external promises (those held by participants)
+ * will also be fulfilled.
+ *
+ * The three participants use a shared signal to synchronise, once each participant has executed
+ * pre() they wait for the signal, when all three have reached the wait then they can all execute
+ * post().
+ *
+ * Observations: The participant can place all behaviour in a single method and they have fine
+ * grained control over the location of the synchronisation point. Signalling can be slightly
+ * messy, the internal signal could be exposed so that there are no internal/external signals
+ * but a single signal that all participants wait for, however it places more onus on the
+ * participant to acquire the signal and schedule a behaviour when the signal is fulfilled.
+ */
+
+class Signal {
+  _count: U64 & imm;
+  // Internal signal to trigger all external signals
+  _signal: Promise[None] & iso;
+
+  create(count: U64 & imm): cown[Signal] & imm {
+    var result = new Signal;
+    result._count = count;
+    result._signal = Promise.create();
+    cown.create(result)
+  }
+
+  await(signal: cown[Signal] & imm): cown[None] & imm {
+    // External signal for the waiter to wait on
+    var promise = Promise.create();
+    var handle = (mut-view promise).wait_handle();
+
+    when (signal) {
+      // When the internal signal triggers, trigger the external signal, this
+      // means that all external signals trigger at the same time.
+      when (var _ = (mut-view (signal._signal)).wait_handle()) {
+        promise.fulfill(new None);
+      };
+
+      // Once the countdown hits zero, trigger the internal signal
+      signal._count = signal._count - 1;
+      if (signal._count == 0) {
+        (signal._signal).fulfill(new None);
+      }
+    };
+
+    handle
+  }
+}
+
+class Participant {
+  _id: U64 & imm;
+  _signal: cown[Signal] & imm;
+
+  create(id: U64 & imm, signal: cown[Signal] & imm): Participant & iso {
+    var result = new Participant;
+    result._id = id;
+    result._signal = signal;
+    result
+  }
+
+  run(self: iso) {
+    when() {
+      // Run the pre behaviour
+      Builtin.print1("Pre: {:#}\n", self._id);
+
+      Builtin.print1("----- Barrier reached {} ------\n", self._id);
+      // When the signal is fulfilled run the post behaviour
+      when (var _ = Signal.await(self._signal)) {
+        Builtin.print1("Post: {:#}\n", self._id);
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var signal = Signal.create(3);
+    var p1 = Participant.create(1, signal);
+    var p2 = Participant.create(2, signal);
+    var p3 = Participant.create(3, signal);
+
+    p1.run();
+    p2.run();
+    p3.run();
+  }
+}

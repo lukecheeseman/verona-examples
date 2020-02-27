@@ -1,0 +1,66 @@
+/* Barrier with promises and global knowledge
+ *
+ * This example keeps all of the scheduling inside of a single method. There is no dedicated
+ * third party object used for synchronisation, instead each Participant knows of the other
+ * two participants by way of a signalling promise. A Participant is constructed with
+ * a Promise (its signal) and two cowns (the other participants signals). When a participant
+ * finishes pre, the participant fulfills its promises, signalling to the other two participants
+ * that it has reached the synchronisation point. The participant then waits for a the signal
+ * for the other two participants, once they are fulfilled then the post behaviour can run.
+ *
+ * observations: this allows participants to not pass themselves around and allows all behaviour
+ * in a single method however each participant must know how many other participants are in
+ * the system.
+ */
+
+class Participant {
+  _id: U64 & imm;
+  _sync: Promise[None] & iso;
+  _signal1: cown[None] & imm;
+  _signal2: cown[None] & imm;
+
+  create(id: U64 & imm, sync: Promise[None] & iso,
+         signal1: cown[None] & imm, signal2: cown[None] & imm): Participant & iso {
+    var result = new Participant;
+    result._id = id;
+    result._sync = sync;
+    result._signal1 = signal1;
+    result._signal2 = signal2;
+    result
+  }
+
+  run(self: iso) {
+    when() {
+      // Run the pre behaviour
+      Builtin.print1("Pre: {:#}\n", self._id);
+
+      Builtin.print1("----- Barrier reached {} ------\n", self._id);
+
+      // When the signal is fulfilled run the post behaviour
+      (self._sync).fulfill(new None);
+      when (var _1 = self._signal1, var _2 = self._signal2) {
+        Builtin.print1("Post: {:#}\n", self._id);
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var signal1 = Promise.create();
+    var signal2 = Promise.create();
+    var signal3 = Promise.create();
+
+    var handle1 = (mut-view signal1).wait_handle();
+    var handle2 = (mut-view signal2).wait_handle();
+    var handle3 = (mut-view signal3).wait_handle();
+
+    var p1 = Participant.create(1, signal1, handle2, handle3);
+    var p2 = Participant.create(2, signal2, handle1, handle3);
+    var p3 = Participant.create(3, signal3, handle1, handle2);
+
+    p1.run();
+    p2.run();
+    p3.run();
+  }
+}
