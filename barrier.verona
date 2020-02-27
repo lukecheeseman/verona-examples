@@ -14,6 +14,11 @@ use "list.verona"
  *
  * Once all Participants have blocked, the Barreir will dispatch
  * all Participants to do some more work (post).
+ *
+ * Observation: synchronisation is handled by a third party collecting up all
+ * of the participants (in fact this is a very similar implementation to barrier-promise
+ * but here an object is used to collect the participants instead of promises and a scheduling
+ * when). Then number of participants involved must be stated ahead of time, is this inflexible?
  */
 
 class Participant {
