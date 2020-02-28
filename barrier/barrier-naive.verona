@@ -67,11 +67,9 @@ class Main {
      * access to it and preventing the later, post barrier, behaviour from
      * running.
      */
-    await(p1.sync(), p2.sync(), p3.sync());
-      when(p1.sync()) { p1.runBeforeBarrier(); };
-      when(c2) { p2.runBeforeBarrier(); };
-      when(c3) { p3.runBeforeBarrier(); };
-    }
+    when(c1) { p1.runBeforeBarrier(); };
+    when(c2) { p2.runBeforeBarrier(); };
+    when(c3) { p3.runBeforeBarrier(); };
 
     /* it is necessary for this when to be dependent on the 3 cowns here,
      * listing them as resources necessary creates a causal relation that means
@@ -79,9 +77,9 @@ class Main {
      */
     when(c1, c2, c3){
       Builtin.print("\n====== All three have reached barrier ======\n");
-      when(c1) { p1.runAfterBarrier(); };
-      when(c2) { p2.runAfterBarrier(); };
-      when(c3) { p3.runAfterBarrier(); }
+      when() { p1.runAfterBarrier(); };
+      when() { p2.runAfterBarrier(); };
+      when() { p3.runAfterBarrier(); }
     }
   }
 }
