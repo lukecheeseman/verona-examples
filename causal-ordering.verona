@@ -1,0 +1,44 @@
+/*
+ * < - causal
+ * << - dispatch
+ *
+ *  b1 < b2 < b4
+ *        <   <
+ *        b3  b5
+ *
+ *  b1 << b3
+ *  b1 << b5
+ *
+ *  Importantly, the following is a permitted execution:
+ *  b2
+ *  b4
+ *  b1
+ *  b5
+ *  b3
+ */
+
+class Main {
+  main() {
+    var c1 = cown.create(new None);
+    var c2 = cown.create(new None);
+    var c3 = cown.create(new None);
+
+    when (c1) {
+      Builtin.print("b1\n");
+    };
+
+    when (c2) {
+      Builtin.print("b2\n");
+      when (c1) {
+        Builtin.print("b3\n");
+      }
+    };
+
+    when (c3) {
+      Builtin.print("b4\n");
+      when (c1) {
+        Builtin.print("b5\n");
+      }
+    };
+  }
+}
