@@ -1,0 +1,81 @@
+interface Runnable[T] {
+  run(self: iso): T;
+}
+
+class Cell[T] {
+  data: T | (None & imm);
+
+  create(data: T): Cell[T] & iso {
+    var result = new Cell;
+    result.data = data;
+    result
+  }
+
+  extract(self: mut): T | (None & imm) {
+    self.data = Builtin.freeze(new None)
+  }
+}
+
+class Either[T] {
+  handle: cown[Cell[T]] & imm;
+  promise: cown[Cell[Promise[Cell[T]] & iso]] & imm;
+
+  _spawn(self: mut, task: Runnable[T] & iso) {
+    var return = self.promise;
+    when() {
+      var result = Cell.create(task.run());
+      when(return) {
+        match (return.extract()) {
+          var p: Promise[Cell[T]] => { p. fulfill(result); }
+          var _: None => {}
+        }
+      };
+    };
+  }
+
+  of(task: Runnable[T] & iso): Either[T] & iso {
+    var result = new Either;
+    var promise = Promise.create();
+    result.handle = (mut-view promise).wait_handle();
+    result.promise = cown.create(Cell.create(promise));
+    result.or(task)
+  }
+
+  or(self: iso, task: Runnable[T] & iso): Either[T] & iso {
+    (mut-view self)._spawn(task);
+    self
+  }
+
+  get(self: iso): cown[Cell[T]] & imm {
+    self.handle
+  }
+}
+
+class Proc {
+  id: U64 & imm;
+
+  create(id: U64 & imm): Proc & iso {
+    var result = new Proc;
+    result.id = id;
+    result
+  }
+
+  run(self: iso): U64Obj & iso {
+    U64Obj.create(self.id)
+  }
+}
+
+class Main {
+  main() {
+    var p1 = Proc.create(1);
+    var p2 = Proc.create(2);
+    var p3 = Proc.create(3);
+
+    when(var result = (((Either.of(p1)).or(p2)).or(p3)).get()) {
+      match (result.extract()) {
+        var o: U64Obj => Builtin.print1("got: {:#}\n", o),
+        var _: None => {}
+      }
+    };
+  }
+}
