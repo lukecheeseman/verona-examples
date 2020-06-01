@@ -18,32 +18,51 @@ class Cell[T] {
 
 class Either[T] {
   handle: cown[Cell[T]] & imm;
-  promise: cown[Cell[Promise[Cell[T]] & iso]] & imm;
-
-  _spawn(self: mut, task: Runnable[T] & iso) {
-    var return = self.promise;
-    when() {
-      var result = Cell.create(task.run());
-      when(return) {
-        match (return.extract()) {
-          var p: Promise[Cell[T]] => { p. fulfill(result); }
-          var _: None => {}
-        }
-      };
-    };
-  }
 
   of(task: Runnable[T] & iso): Either[T] & iso {
     var result = new Either;
     var promise = Promise.create();
     result.handle = (mut-view promise).wait_handle();
-    result.promise = cown.create(Cell.create(promise));
-    result.or(task)
+    when() {
+      promise.fulfill(Cell.create(task.run()));
+    };
+    result
   }
 
-  or(self: iso, task: Runnable[T] & iso): Either[T] & iso {
-    (mut-view self)._spawn(task);
-    self
+  or[U](self: iso, task: Runnable[U] & iso): Either[T | U | (None & imm)] & iso {
+    var result = new Either;
+    var promise = Promise.create();
+    result.handle = (mut-view promise).wait_handle();
+
+    var return = cown.create(Cell.create(promise));
+
+    when() {
+      var c = Cell.create(task.run());
+      when (return) {
+        match (return.extract()) {
+          var _: None => {}
+          var p: Promise[Cell[T | U | (None & imm)]] => {
+            p.fulfill(c);
+          }
+        }
+      };
+    };
+
+    // OR
+
+    when(var c = self.handle) {
+      var c = Cell.create(c.extract());
+      when(return) {
+        match (return.extract()) {
+          var _: None => {}
+          var p: Promise[Cell[T | U | (None & imm)]] => {
+            p.fulfill(c);
+          }
+        }
+      }
+    };
+
+    result
   }
 
   get(self: iso): cown[Cell[T]] & imm {
@@ -65,16 +84,29 @@ class Proc {
   }
 }
 
+class StringProc {
+  create(): StringProc & iso {
+    var result = new StringProc;
+    result
+  }
+
+  run(self: iso): Cell[String] & iso {
+    Cell.create("string proc")
+  }
+}
+
 class Main {
   main() {
     var p1 = Proc.create(1);
-    var p2 = Proc.create(2);
+    var p2 = StringProc.create();
     var p3 = Proc.create(3);
 
-    when(var result = (((Either.of(p1)).or(p2)).or(p3)).get()) {
+    when(var result = ((((Either.of(p1)).or(p2))).or(p3)).get()) {
+      Builtin.print("got: ");
       match (result.extract()) {
-        var o: U64Obj => Builtin.print1("got: {:#}\n", o),
-        var _: None => {}
+        var o: U64Obj => Builtin.print1("{:#}\n", o),
+        var s: Cell[String] => Builtin.print1("{:#}\n", s),
+        var _: None => Builtin.print("None\n"),
       }
     };
   }
