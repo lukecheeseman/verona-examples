@@ -1,0 +1,149 @@
+use "channel-condition.verona"
+
+class Tuple1[A] {
+  a: A;
+  create(a: A): Tuple1[A] & iso {
+    var result = new Tuple1;
+    result.a = a;
+    result
+  }
+}
+
+class Tuple2[A, B] {
+  a: A;
+  b: B;
+  create(a: A, b: B): Tuple2[A, B] & iso {
+    var result = new Tuple2;
+    result.a = a;
+    result.b = b;
+    result
+  }
+}
+
+interface Run1[A: iso | imm] { apply(self: mut, a: Cell[A] & mut); }
+interface Run2[A: iso | imm, B: iso | imm] { apply(self: mut, a: Cell[A] & mut, b: Cell[B] & mut); }
+
+class Pattern1[A: iso | imm] {
+  chan: cown[Channel[A]] & imm;
+
+  create(chan: cown[Channel[A]] & imm): Pattern1[A] & iso {
+    var result = new Pattern1;
+    result.chan = chan;
+    result
+  }
+
+  And[B: iso | imm](self: iso, chan: cown[Channel[B]] & imm): Pattern2[A, B] & iso {
+    Pattern2.create(self, chan)
+  }
+
+  Do(self: iso, run: Run1[A] & iso) {
+    when(var ca = Channel.read(self.chan)) {
+      (mut-view run).apply(ca);
+      self.Do(run);
+    }
+  }
+}
+
+class Pattern2[A: iso | imm, B: iso | imm] {
+  chana: cown[Channel[A]] & imm;
+  chanb: cown[Channel[B]] & imm;
+
+  create(prev: Pattern1[A] & iso,
+         chan: cown[Channel[B]] & imm): Pattern2[A, B] & iso {
+    var result = new Pattern2;
+    result.chana = prev.chan;
+    result.chanb = chan;
+    result
+  }
+
+  Do(self: iso, run: Run2[A, B] & iso) {
+    when(var ca = Channel.read(self.chana),
+         var cb = Channel.read(self.chanb)) {
+      (mut-view run).apply(ca, cb);
+      self.Do(run);
+    }
+  }
+}
+
+class Join {
+  When[T: iso | imm](chan: cown[Channel[T]] & imm) : Pattern1[T] & iso {
+    Pattern1.create(chan)
+  }
+}
+
+class Task1 {
+  create(): Task1 & iso { new Task1 }
+  apply(self: mut,
+        cont: Cell[cown[Channel[U64Obj & iso]] & imm] & mut,
+        m: Cell[U64Obj & iso] & mut) {
+    match cont.extract() {
+      var c: cown[Channel[U64Obj & iso]] => {
+        match m.extract() {
+          var o: U64Obj => {
+            Channel.write(c, o);
+          }
+        }
+      }
+    };
+  }
+}
+
+class Task2 {
+  create(): Task2 & iso { new Task2 }
+
+  apply(self: mut,
+        c1: Cell[Tuple2[U64Obj & iso, cown[Channel[U64Obj & iso]] & imm] & iso] & mut,
+        c2: Cell[Tuple2[U64Obj & iso, cown[Channel[U64Obj & iso]] & imm] & iso] & mut) {
+    match c1.extract() {
+      var t1: Tuple2[U64Obj & iso, cown[Channel[U64Obj & iso]] & imm] => {
+        match c2.extract() {
+          var t2: Tuple2[U64Obj & iso, cown[Channel[U64Obj & iso]] & imm] => {
+            Builtin.print("plz send help\n");
+          }
+        }
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var put = Channel.create();
+    var get = Channel.create();
+
+    ((Join.When(get)).And(put)).Do(Task1.create());
+
+    var cont = Channel.create();
+    Channel.write(get, cont);
+    Channel.write(put, U64Obj.create(12));
+
+    when(var out = Channel.read(cont)) {
+      Builtin.print1("got: {:#}\n", out);
+    };
+
+    var p1 = Channel.create();
+    var p2 = Channel.create();
+
+    // synchronisation is just continuation channels...
+    // so give a continuation channel
+    var cont1 = Channel.create();
+    var cont2 = Channel.create();
+
+    ((Join.When(p1)).And(p2)).Do(Task2.create());
+
+    Channel.write(p1, Tuple2.create(U64Obj.create(12), cont1));
+    Channel.write(p2, Tuple2.create(U64Obj.create(45), cont2));
+
+    when() {
+      when(var c = Channel.read(cont1)) {
+        Builtin.print1("cont1: {:#}\n", c);
+      }
+    };
+
+    when() {
+      when(var c = Channel.read(cont2)) {
+        Builtin.print1("cont2: {:#}\n", c);
+      }
+    };
+  }
+}
