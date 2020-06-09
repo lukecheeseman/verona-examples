@@ -1,5 +1,14 @@
 use "channel-condition.verona"
 
+/* Joins using Channels in Verona
+ *
+ * Supporting are the Tuple classes and Run interfaces
+ *
+ * Join pattern are constructed from channels and callbacks,
+ * when all the channels required for a callback have a message the callback
+ * runs
+ */
+
 class Tuple1[A] {
   a: A;
   create(a: A): Tuple1[A] & iso {
@@ -23,6 +32,10 @@ class Tuple2[A, B] {
 interface Run1[A: iso | imm] { apply(self: mut, a: Cell[A] & mut); }
 interface Run2[A: iso | imm, B: iso | imm] { apply(self: mut, a: Cell[A] & mut, b: Cell[B] & mut); }
 
+/* Patterns have a number of channels, when the Do method is called a behaviour
+ * that waits for messages on all channels is created. Once the callback has
+ * run, the same behaviour is rescheduled.
+ */
 class Pattern1[A: iso | imm] {
   chan: cown[Channel[A]] & imm;
 
@@ -65,12 +78,14 @@ class Pattern2[A: iso | imm, B: iso | imm] {
   }
 }
 
+/* Utility to start of a new Pattern */
 class Join {
   When[T: iso | imm](chan: cown[Channel[T]] & imm) : Pattern1[T] & iso {
     Pattern1.create(chan)
   }
 }
 
+/* Task1 writes the message to the continuation channel */
 class Task1 {
   create(): Task1 & iso { new Task1 }
   apply(self: mut,
@@ -88,6 +103,7 @@ class Task1 {
   }
 }
 
+/* Task2 writes the messages to the alternate continuation channels */
 class Task2 {
   create(): Task2 & iso { new Task2 }
 
@@ -98,7 +114,7 @@ class Task2 {
       var t1: Tuple2[U64Obj & iso, cown[Channel[U64Obj & iso]] & imm] => {
         match c2.extract() {
           var t2: Tuple2[U64Obj & iso, cown[Channel[U64Obj & iso]] & imm] => {
-            Builtin.print("plz send help\n");
+            Builtin.print("rendezvous pattern\n");
           }
         }
       }
@@ -108,15 +124,22 @@ class Task2 {
 
 class Main {
   main() {
+    /* create a buffer through the join pattern */
     var put = Channel.create();
     var get = Channel.create();
+    var splat = Channel.create();
 
     ((Join.When(get)).And(put)).Do(Task1.create());
+    ((Join.When(get)).And(splat)).Do(Task1.create());
 
+    /* synchronous methods are the desugared operation from the literature
+     * the async get message contains the continuation channel to write to
+     */
     var cont = Channel.create();
     Channel.write(get, cont);
     Channel.write(put, U64Obj.create(12));
 
+    /* we then use the result from the continuation channel */
     when(var out = Channel.read(cont)) {
       Builtin.print1("got: {:#}\n", out);
     };
@@ -129,18 +152,21 @@ class Main {
     var cont1 = Channel.create();
     var cont2 = Channel.create();
 
+    /* Task2 shows the rendezvous pattern, two continuation channels
+     * are present at the same time
+     */
     ((Join.When(p1)).And(p2)).Do(Task2.create());
 
-    Channel.write(p1, Tuple2.create(U64Obj.create(12), cont1));
-    Channel.write(p2, Tuple2.create(U64Obj.create(45), cont2));
-
+    /* setup the two channels to cause the rendezvous */
     when() {
+      Channel.write(p1, Tuple2.create(U64Obj.create(12), cont1));
       when(var c = Channel.read(cont1)) {
         Builtin.print1("cont1: {:#}\n", c);
       }
     };
 
     when() {
+      Channel.write(p2, Tuple2.create(U64Obj.create(45), cont2));
       when(var c = Channel.read(cont2)) {
         Builtin.print1("cont2: {:#}\n", c);
       }
