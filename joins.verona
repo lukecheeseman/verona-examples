@@ -127,10 +127,8 @@ class Main {
     /* create a buffer through the join pattern */
     var put = Channel.create();
     var get = Channel.create();
-    var splat = Channel.create();
 
     ((Join.When(get)).And(put)).Do(Task1.create());
-    ((Join.When(get)).And(splat)).Do(Task1.create());
 
     /* synchronous methods are the desugared operation from the literature
      * the async get message contains the continuation channel to write to
