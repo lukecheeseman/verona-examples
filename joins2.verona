@@ -1,0 +1,191 @@
+use "channel-condition.verona"
+
+/* Joins using Channels in Verona
+ *
+ * Supporting are the Tuple classes and Run interfaces
+ *
+ * Join pattern are constructed from channels and callbacks,
+ * when all the channels required for a callback have a message the callback
+ * runs
+ */
+
+class Tuple1[A] {
+  a: A;
+  create(a: A): Tuple1[A] & iso {
+    var result = new Tuple1;
+    result.a = a;
+    result
+  }
+}
+
+class Tuple2[A, B] {
+  a: A;
+  b: B;
+  create(a: A, b: B): Tuple2[A, B] & iso {
+    var result = new Tuple2;
+    result.a = a;
+    result.b = b;
+    result
+  }
+}
+
+interface Run1[A: iso | imm] { apply(self: mut, a: Cell[A] & mut); }
+interface Run2[A: iso | imm, B: iso | imm] { apply(self: mut, a: Cell[A] & mut, b: Cell[B] & mut); }
+
+class Unit {
+  create(): None & imm { Builtin.freeze(new None) }
+}
+
+class AsyncChan[S: iso | imm] {
+  chan: cown[Channel[S]] & imm;
+
+  create(): cown[AsyncChan[S]] & imm {
+    var result = new AsyncChan;
+    result.chan = Channel.create();
+    cown.create(result)
+  }
+
+  apply(chan: cown[AsyncChan[S]] & imm, value: S) {
+    when(chan) {
+      Channel.write(chan.chan, value);
+    }
+  }
+
+  get(chan: cown[AsyncChan[S]] & imm): cown[Cell[S]] & imm {
+    var p = Promise.create();
+    var fut = (mut-view p).wait_handle();
+    when(chan) {
+      when(var out = Channel.read(chan.chan)) {
+        p.fulfill(Cell.create(out.extract()));
+      }
+    };
+    fut
+  }
+}
+
+class SyncChan[S: iso | imm, R: iso | imm] {
+  recv: cown[Channel[R]] & imm;
+  send: cown[Channel[Tuple2[S, cown[Channel[R]] & imm] & iso]] & imm;
+
+  create(): cown[SyncChan[S, R]] & imm {
+    var result = new SyncChan;
+    result.send = Channel.create();
+    result.recv = Channel.create();
+    cown.create(result)
+  }
+
+  apply(chan: cown[SyncChan[S, R]] & imm, value: S): cown[Cell[R]] & imm {
+    var p = Promise.create();
+    var fut = (mut-view p).wait_handle();
+    when(chan) {
+      Channel.write(chan.send, Tuple2.create(value, chan.recv));
+      when(var out = Channel.read(chan.recv)) {
+        p.fulfill(Cell.create(out.extract()));
+      }
+    };
+    fut
+  }
+
+  get(chan: cown[SyncChan[S, R]] & imm): cown[Cell[Tuple2[S, cown[Channel[R]] & imm] & iso]] & imm {
+    var p = Promise.create();
+    var fut = (mut-view p).wait_handle();
+    when(chan) {
+      when(var out = Channel.read(chan.send)) {
+        p.fulfill(Cell.create(out.extract()));
+      }
+    };
+    fut
+  }
+}
+
+/* Patterns have a number of channels, when the Do method is called a behaviour
+ * that waits for messages on all channels is created. Once the callback has
+ * run, the same behaviour is rescheduled.
+ */
+class Pattern1[A: iso | imm] {
+  chan: cown[Channel[A]] & imm;
+
+  create(chan: cown[Channel[A]] & imm): Pattern1[A] & iso {
+    var result = new Pattern1;
+    result.chan = chan;
+    result
+  }
+
+  And[B: iso | imm](self: iso, chan: cown[Channel[B]] & imm): Pattern2[A, B] & iso {
+    Pattern2.create(self, chan)
+  }
+
+  Do(self: iso, run: Run1[A] & iso) {
+    when(var ca = Channel.read(self.chan)) {
+      (mut-view run).apply(ca);
+      self.Do(run);
+    }
+  }
+}
+
+class Pattern2[A: iso | imm, B: iso | imm] {
+  chana: cown[Channel[A]] & imm;
+  chanb: cown[Channel[B]] & imm;
+
+  create(prev: Pattern1[A] & iso,
+         chan: cown[Channel[B]] & imm): Pattern2[A, B] & iso {
+    var result = new Pattern2;
+    result.chana = prev.chan;
+    result.chanb = chan;
+    result
+  }
+
+  Do(self: iso, run: Run2[A, B] & iso) {
+    when(var ca = Channel.read(self.chana),
+         var cb = Channel.read(self.chanb)) {
+      (mut-view run).apply(ca, cb);
+      self.Do(run);
+    }
+  }
+}
+
+/* Utility to start of a new Pattern */
+class Join {
+  When[T: iso | imm](chan: cown[Channel[T]] & imm) : Pattern1[T] & iso {
+    Pattern1.create(chan)
+  }
+}
+
+/* Task1 writes the message to the continuation channel */
+class Task1 {
+  create(): Task1 & iso { new Task1 }
+  apply(self: mut,
+        cont: Cell[cown[Channel[U64Obj & iso]] & imm] & mut,
+        m: Cell[U64Obj & iso] & mut) {
+    match cont.extract() {
+      var c: cown[Channel[U64Obj & iso]] => {
+        match m.extract() {
+          var o: U64Obj => {
+            Channel.write(c, o);
+          }
+        }
+      }
+    };
+  }
+}
+
+class Main {
+  main() {
+    /* create a buffer through the join pattern */
+    var put = AsyncChan.create();
+    var get = SyncChan.create();
+
+//    var channels = ((Join.When(get)).And(put)).Do(Task1.create());
+
+    AsyncChan.apply(put, U64Obj.create(10));
+
+    when(var out = SyncChan.apply(get, Unit.create())) {
+      match out.extract() {
+        var _: None => Builtin.print("Got: None\n"),
+        var o: U64Obj => Builtin.print1("Got: {:#}\n", o),
+      }
+    }
+
+  }
+}
+
