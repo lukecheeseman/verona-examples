@@ -100,8 +100,12 @@ class Chan[S, R] {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
     when (chan) {
-      when (var _ = (mut-view (chan._condition)).await()) {
+      if chan.has_message() {
         p.fulfill(new None);
+      } else {
+        when (var _ = (mut-view (chan._condition)).await()) {
+          p.fulfill(new None);
+        }
       }
     };
     f
@@ -240,11 +244,23 @@ class Main {
      */
 
     Chan.async(put, U64Obj.create(12));
+    Chan.async(put, U64Obj.create(88));
+    Chan.async(put, U64Obj.create(43));
     when(var o = Chan.sync(get, new None)) {
       Builtin.print1("got: {:#}\n", o);
     };
     when(var o = Chan.sync(print, new None)) {
       Builtin.print1("print: {:#}\n", o);
+    };
+    when(var o = Chan.sync(get, new None)) {
+      Builtin.print1("got again: {:#}\n", o);
+    };
+    Chan.async(put, U64Obj.create(99));
+    when(var o = Chan.sync(print, new None)) {
+      Builtin.print1("print after: {:#}\n", o);
+    };
+    when(var o = Chan.sync(get, new None)) {
+      Builtin.print1("get yet again: {:#}\n", o);
     };
   }
 }
