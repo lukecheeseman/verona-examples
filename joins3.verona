@@ -52,27 +52,25 @@ class Cell[T] {
 }
 
 class Message[S, R] {
-  _data: (Cell[S] & iso) | (None & imm);
+  _data: (S & iso) | (None & imm);
   _reply: (Promise[Cell[R]] & iso) | (None & imm);
 
   create(data: S & iso): Message[S, None] & iso {
     var result = new Message;
-    result._data = Cell.create(data);
+    result._data = data;
     result._reply = Builtin.freeze(new None);
     result
   }
 
   repliable(data: S & iso, reply: Promise[Cell[R]] & iso): Message[S, R] & iso {
     var result = new Message;
-    result._data = Cell.create(data);
+    result._data = data;
     result._reply = reply;
     result
   }
 
-  open(self: mut): Cell[S] & iso {
-    match(self._data = Builtin.freeze(new None)) {
-      var c: Cell[S] => c,
-    }
+  open(self: mut): (S & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
   }
 
   reply(self: mut, value: R & iso) {
@@ -210,7 +208,7 @@ class Pattern2[S1, R1, S2, R2] {
   }
 }
 
-/* Utility to start of a new Pattern */
+/* Utility to create a new Pattern */
 class Join {
   When[S, R](chan: cown[Chan[S, R]] & imm) : Pattern1[S, R] & iso {
     Pattern1.create(chan)
@@ -222,7 +220,7 @@ class Task1 {
   apply(self: mut,
         put: Message[U64Obj, None] & iso,
         get: Message[None, U64Obj] & iso) {
-    match (mut-view ((mut-view put).open())).extract() {
+    match (mut-view put).open() {
       var _: None => Builtin.print("got: None"),
       var o: U64Obj => (mut-view get).reply(o),
     }
@@ -236,6 +234,7 @@ class Main {
     var get = Chan.create();
     var print = Chan.create();
 
+    /* create join patterns */
     ((Join.When(put)).And(print)).Do(Task1.create());
     ((Join.When(put)).And(get)).Do(Task1.create());
 
@@ -255,12 +254,13 @@ class Main {
     when(var o = Chan.sync(get, new None)) {
       Builtin.print1("got again: {:#}\n", o);
     };
-    Chan.async(put, U64Obj.create(99));
     when(var o = Chan.sync(print, new None)) {
       Builtin.print1("print after: {:#}\n", o);
     };
     when(var o = Chan.sync(get, new None)) {
       Builtin.print1("get yet again: {:#}\n", o);
     };
+    Chan.async(put, U64Obj.create(99));
+    // These are unordered, get and print can swap. Is this an issue?
   }
 }
