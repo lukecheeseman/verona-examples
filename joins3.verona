@@ -116,7 +116,17 @@ class Chan[S, R] {
     }
   }
 
-  sync(chan: cown[Chan[S, R]] & imm, v: S & iso): cown[Cell[R]] & imm {
+  sync(chan: cown[Chan[None, R]] & imm): cown[Cell[R]] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    when (chan) {
+      (mut-view (chan._queue)).add(Message.repliable(new None, p));
+      (mut-view (chan._condition)).signal();
+    };
+    f
+  }
+
+  syncdata(chan: cown[Chan[S, R]] & imm, v: S & iso): cown[Cell[R]] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
     when (chan) {
@@ -125,6 +135,7 @@ class Chan[S, R] {
     };
     f
   }
+
 
   has_message(self: mut): U64 & imm {
     match (mut-view (self._queue)).remove() {
@@ -245,19 +256,19 @@ class Main {
     Chan.async(put, U64Obj.create(12));
     Chan.async(put, U64Obj.create(88));
     Chan.async(put, U64Obj.create(43));
-    when(var o = Chan.sync(get, new None)) {
+    when(var o = Chan.sync(get)) {
       Builtin.print1("got: {:#}\n", o);
     };
-    when(var o = Chan.sync(print, new None)) {
+    when(var o = Chan.sync(print)) {
       Builtin.print1("print: {:#}\n", o);
     };
-    when(var o = Chan.sync(get, new None)) {
+    when(var o = Chan.sync(get)) {
       Builtin.print1("got again: {:#}\n", o);
     };
-    when(var o = Chan.sync(print, new None)) {
+    when(var o = Chan.sync(print)) {
       Builtin.print1("print after: {:#}\n", o);
     };
-    when(var o = Chan.sync(get, new None)) {
+    when(var o = Chan.sync(get)) {
       Builtin.print1("get yet again: {:#}\n", o);
     };
     Chan.async(put, U64Obj.create(99));
