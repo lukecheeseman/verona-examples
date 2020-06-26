@@ -1,0 +1,218 @@
+use "barrier.verona"
+
+class Collect {
+  _count: U64 & imm;
+  _reset: U64 & imm;
+  _empty: Promise[None] & iso;
+  _full: Promise[None] & iso;
+
+  create(count: U64 & imm): cown[Collect] & imm {
+    var result = new Collect;
+    result._count = count;
+    result._reset = count;
+    result._empty = Promise.create();
+    result._full = Promise.create();
+    cown.create(result)
+  }
+
+  empty(collect: cown[Collect] & imm) {
+    when(collect) {
+      collect._count = collect._reset;
+      (collect._empty = Promise.create()).fulfill(new None);
+    }
+  }
+
+  full(collect: cown[Collect] & imm): cown[None] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    when(collect) {
+      if (collect._count == 0) {
+        p.fulfill(new None);
+      } else {
+        when(var _ = (mut-view (collect._full)).wait_handle()) {
+          p.fulfill(new None);
+        }
+      }
+    };
+    f
+  }
+
+  _enter(collect: cown[Collect] & imm, barrier: Promise[None] & iso) {
+    when(var s = collect) {
+      if (s._count > 0) {
+        s._count = s._count - 1;
+        barrier.fulfill(new None);
+        if (s._count == 0) {
+          (s._full = Promise.create()).fulfill(new None);
+        }
+      } else {
+        when (var _ = (mut-view (s._empty)).wait_handle()) {
+          Collect._enter(collect, barrier);
+        };
+      }
+    };
+  }
+
+  enter(collect: cown[Collect] & imm): cown[None] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    Collect._enter(collect, p);
+    f
+  }
+}
+
+class Elf {
+  _id: U64 & imm;
+  _elveswaiting: cown[Collect] & imm;
+  _roomin: cown[Signal] & imm;
+  _roomout: cown[Signal] & imm;
+
+  work(self: mut) {
+    Builtin.print1("Elf {:#} is working\n", self._id);
+  }
+
+  consult_with_santa(self: mut) {
+    Builtin.print1("Elf {:#} is meeting with Santa\n", self._id);
+  }
+
+  start(id: U64 & imm, elveswaiting: cown[Collect] & imm, roomin: cown[Signal] & imm,
+        roomout: cown[Signal] & imm) {
+    var result = new Elf;
+    result._id = id;
+    result._elveswaiting = elveswaiting;
+    result._roomin = roomin;
+    result._roomout = roomout;
+    result._loop();
+  }
+
+  _loop(self: iso) {
+    (mut-view self).work();
+    when(var _ = Collect.enter(self._elveswaiting)) {
+      when(var _ = Signal.wait(self._roomin)) {
+        (mut-view self).consult_with_santa();
+        when(var _ = Signal.wait(self._roomout)) {
+          self._loop();
+        }
+      }
+    }
+  }
+}
+
+class Reindeer {
+  _id: U64 & imm;
+  _reindeerback: cown[Collect] & imm;
+  _harness: cown[Signal] & imm;
+  _unharness: cown[Signal] & imm;
+
+  holiday(self: mut) {
+    Builtin.print1("Reindeer {:#} is on holiday\n", self._id);
+  }
+
+  deliver_toys(self: mut) {
+    Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
+  }
+
+  start(id: U64 & imm, reindeerback: cown[Collect] & imm,
+        harness: cown[Signal] & imm, unharness: cown[Signal] & imm) {
+    var result = new Reindeer;
+    result._id = id;
+    result._reindeerback = reindeerback;
+    result._harness = harness;
+    result._unharness = unharness;
+    result._loop();
+  }
+
+  _loop(self: iso) {
+    (mut-view self).holiday();
+    when(var _ = Collect.enter(self._reindeerback)) {
+      when(var _ = Signal.wait(self._harness)) {
+        (mut-view self).deliver_toys();
+        when(var _ = Signal.wait(self._unharness)) {
+          self._loop();
+        }
+      }
+    }
+  }
+}
+
+class Santa {
+  consult_with_elves() {
+    Builtin.print("Santa is meeting with Elves\n");
+  }
+
+  meet_elves(santa: cown[Collect] & imm, elveswaiting: cown[Collect] & imm,
+             roomin: cown[Signal] & imm, roomout: cown[Signal] & imm) {
+    when(var _ = Collect.full(elveswaiting)) {
+      when(var _ = Collect.enter(santa)) { // using collect as a semaphore
+        when(var _ = Signal.wait(roomin)) {
+          Collect.empty(elveswaiting);
+          Santa.consult_with_elves();
+          when(var _ = Signal.wait(roomout)) {
+            Collect.empty(santa);
+            Santa.meet_elves(santa, elveswaiting, roomin, roomout);
+          }
+        }
+      }
+    }
+  }
+
+  deliver_toys() {
+    Builtin.print("Santa is delivering Toys\n")
+  }
+
+  meet_reindeer(santa: cown[Collect] & imm, reindeerback: cown[Collect] & imm,
+                harness: cown[Signal] & imm, unharness: cown[Signal] & imm) {
+    when(var _' = Collect.full(reindeerback)) {
+      when(var _ = Collect.enter(santa)) {
+        when(var _ = Signal.wait(harness)) {
+          Collect.empty(reindeerback);
+          Santa.deliver_toys();
+          when(var _ = Signal.wait(unharness)) {
+            Collect.empty(santa);
+            Santa.meet_reindeer(santa, reindeerback, harness, unharness);
+          }
+        }
+      }
+    }
+  }
+
+  start(reindeerback: cown[Collect] & imm, harness: cown[Signal] & imm, unharness: cown[Signal] & imm,
+        elveswaiting: cown[Collect] & imm, roomin: cown[Signal] & imm, roomout: cown[Signal] & imm) {
+    var santa = Collect.create(1);
+    Santa.meet_elves(santa, elveswaiting, roomin, roomout);
+    Santa.meet_reindeer(santa, reindeerback, harness, unharness);
+  }
+}
+
+class Main {
+  main() {
+    var elveswaiting = Collect.create(3);
+    var roomin = Signal.create(4);
+    var roomout = Signal.create(4);
+
+    var reindeerback = Collect.create(9);
+    var harness = Signal.create(10);
+    var unharness = Signal.create(10);
+
+    Santa.start(reindeerback, harness, unharness,
+                elveswaiting, roomin, roomout);
+
+    Elf.start(1, elveswaiting, roomin, roomout);
+    Elf.start(2, elveswaiting, roomin, roomout);
+    Elf.start(3, elveswaiting, roomin, roomout);
+    Elf.start(4, elveswaiting, roomin, roomout);
+    Elf.start(5, elveswaiting, roomin, roomout);
+    Elf.start(6, elveswaiting, roomin, roomout);
+    Elf.start(7, elveswaiting, roomin, roomout);
+
+    Reindeer.start(1, reindeerback, harness, unharness);
+    Reindeer.start(2, reindeerback, harness, unharness);
+    Reindeer.start(3, reindeerback, harness, unharness);
+    Reindeer.start(4, reindeerback, harness, unharness);
+    Reindeer.start(5, reindeerback, harness, unharness);
+    Reindeer.start(6, reindeerback, harness, unharness);
+    Reindeer.start(7, reindeerback, harness, unharness);
+    Reindeer.start(8, reindeerback, harness, unharness);
+    Reindeer.start(9, reindeerback, harness, unharness);
+  }
+}
