@@ -9,6 +9,18 @@ use "channel-condition.verona"
  * runs
  */
 
+/*
+ * Ideas:
+ *   - patterns receive message, open them all and if any are empty returns them
+ *
+ * All patterns with available messages should have an equal chance of running
+ *   - a join registers patterns
+ *   - pattern checks all channels
+ *
+ * Patterns subscribe to changes in channel state
+ *   - when a signal as been received from all channels then it checks them all?
+ */
+
 class Message[S, R] {
   _data: (Cell[S] & iso) | (None & imm);
   _reply: (Promise[Cell[R]] & iso) | (None & imm);
@@ -41,6 +53,27 @@ class Message[S, R] {
       }
     }
   }
+}
+
+class Chan[S, R] {
+  _chan: cown[Channel[Message[S, R]]] & imm;
+  _promise: Promise[Message[S, R]] & iso;
+
+  create(): cown[Chan[S, R]] & imm {
+    var result = new Chan;
+    result._chan = Channel.create();
+    result._promise = Promise.create();
+    cown.create(result)
+  }
+
+  /*
+  read(chan: cown[Chan[S, R]] & imm): cown[Message[S, R]] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    when(chan) {
+    };
+    f
+  }*/
 }
 
 interface Run1[A] { apply(self: mut, a: A & iso); }
@@ -125,9 +158,9 @@ class Main {
     /* create a buffer through the join pattern */
     var put = Channel.create();
     var get = Channel.create();
-    var splat = Channel.create();
+    var print = Channel.create();
 
-    ((Join.When(get)).And(splat)).Do(Task1.create());
+    ((Join.When(get)).And(print)).Do(Task1.create());
     ((Join.When(get)).And(put)).Do(Task1.create());
 
     /* synchronous methods are the desugared operation from the literature

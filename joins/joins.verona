@@ -2,8 +2,6 @@ use "list.verona"
 
 /* Joins using Channels in Verona
  *
- * Supporting are the Tuple classes and Run interfaces
- *
  * Join pattern are constructed from channels and callbacks,
  * when all the channels required for a callback have a message the callback
  * runs
@@ -240,7 +238,7 @@ class Task1 {
 
 class Main {
   main() {
-    /* create a buffer through the join pattern */
+    /* create a buffer through the join pattern, put and get are cowns of Chan */
     var put = Chan.create();
     var get = Chan.create();
     var print = Chan.create();
