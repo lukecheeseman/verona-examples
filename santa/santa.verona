@@ -84,7 +84,7 @@ interface Participant {
 // Elves and Reindeer are processes with
 //   - working alone and together task
 //   - a group that they try to join
-//   - synchronisation primitves for starting and finishing the colloborative tasks
+//   - synchronisation primitves for starting and finishing the collaborative tasks
 class Process {
   _participant: Participant & iso;
   _group: cown[Group] & imm;
@@ -103,9 +103,9 @@ class Process {
 
   // The lifecycle of a participant
   //   - work alone
-  //   - try to join the colloborative group
-  //   - synchronise on starting the colloborative task
-  //   - synchronise on finishing the colloborative task
+  //   - try to join the collaborative group
+  //   - synchronise on starting the collaborative task
+  //   - synchronise on finishing the collaborative task
   //   - repeat
   _loop(self: iso) {
     (mut-view ((mut-view self)._participant)).work_alone();
@@ -172,8 +172,8 @@ class Santa {
   //  Santa tries to meet a group as follows:
   //    - waiting for a signal that the group is full
   //    - using a group of one as a semaphore for Santa (enabling only one Santa task)
-  //    - sychronising on starting a colloborative task
-  //    - syncrhonising on finishing a colloborative task
+  //    - sychronising on starting a collaborative task
+  //    - syncrhonising on finishing a collaborative task
   //    - emptying the santa group (uping the semaphore and allowing another Santa task)
   //    - creating another behaviour that does the same
   meet_group(santa: cown[Group] & imm, group: cown[Group] & imm,
