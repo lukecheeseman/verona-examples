@@ -2,12 +2,12 @@ use "barrier-internal-sync.verona"
 
 class Participant {
   _id: U64 & imm;
-  _signal: cown[Signal] & imm;
+  _barrier: cown[Barrier] & imm;
 
-  create(id: U64 & imm, signal: cown[Signal] & imm): Participant & iso {
+  create(id: U64 & imm, barrier: cown[Barrier] & imm): Participant & iso {
     var result = new Participant;
     result._id = id;
-    result._signal = signal;
+    result._barrier = barrier;
     result
   }
 
@@ -17,12 +17,12 @@ class Participant {
       Builtin.print1("Pre: {:#}\n", self._id);
 
       Builtin.print1("----- Barrier reached {} ------\n", self._id);
-      // When the signal is fulfilled run the post behaviour
-      when (var _ = Signal.await(self._signal)) {
+      // When the barrier is fulfilled run the post behaviour
+      when (var _ = Barrier.await(self._barrier)) {
         Builtin.print1("Mid: {:#}\n", self._id);
 
         Builtin.print1("----- Barrier reached {} ------\n", self._id);
-        when (var _ = Signal.await(self._signal)) {
+        when (var _ = Barrier.await(self._barrier)) {
           Builtin.print1("Post: {:#}\n", self._id);
         }
       }
@@ -32,10 +32,10 @@ class Participant {
 
 class Main {
   main() {
-    var signal = Signal.create(3);
-    var p1 = Participant.create(1, signal);
-    var p2 = Participant.create(2, signal);
-    var p3 = Participant.create(3, signal);
+    var barrier = Barrier.create(3);
+    var p1 = Participant.create(1, barrier);
+    var p2 = Participant.create(2, barrier);
+    var p3 = Participant.create(3, barrier);
 
     p1.run();
     p2.run();

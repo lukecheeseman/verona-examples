@@ -19,37 +19,37 @@
  * participant to acquire the signal and schedule a behaviour when the signal is fulfilled.
  */
 
-class Signal {
+class Barrier {
   _count: U64 & imm;
   _reset: U64 & imm;
-  // Internal signal to trigger all external signals
-  _signal: Promise[None] & iso;
+  // Internal barrier to trigger all external barriers
+  _barrier: Promise[None] & iso;
 
-  create(count: U64 & imm): cown[Signal] & imm {
-    var result = new Signal;
+  create(count: U64 & imm): cown[Barrier] & imm {
+    var result = new Barrier;
     result._count = count;
     result._reset = count;
-    result._signal = Promise.create();
+    result._barrier = Promise.create();
     cown.create(result)
   }
 
-  await(signal: cown[Signal] & imm): cown[None] & imm {
-    // External signal for the waiter to wait on
+  await(barrier: cown[Barrier] & imm): cown[None] & imm {
+    // External barrier for the waiter to wait on
     var promise = Promise.create();
     var handle = (mut-view promise).wait_handle();
 
-    when (signal) {
-      // When the internal signal triggers, trigger the external signal, this
-      // means that all external signals trigger at the same time.
-      when (var _ = (mut-view (signal._signal)).wait_handle()) {
+    when (barrier) {
+      // When the internal barrier triggers, trigger the external barrier, this
+      // means that all external barriers trigger at the same time.
+      when (var _ = (mut-view (barrier._barrier)).wait_handle()) {
         promise.fulfill(new None);
       };
 
-      // Once the countdown hits zero, trigger the internal signal
-      signal._count = signal._count - 1;
-      if (signal._count == 0) {
-        (signal._signal = Promise.create()).fulfill(new None);
-        signal._count = signal._reset;
+      // Once the countdown hits zero, trigger the internal barrier
+      barrier._count = barrier._count - 1;
+      if (barrier._count == 0) {
+        (barrier._barrier = Promise.create()).fulfill(new None);
+        barrier._count = barrier._reset;
       }
     };
 
