@@ -70,115 +70,99 @@ class Group {
   }
 }
 
-class Elf {
-  _id: U64 & imm;
-  _elveswaiting: cown[Group] & imm;
-  _roomin: cown[Barrier] & imm;
-  _roomout: cown[Barrier] & imm;
+interface Participant {
+  work_alone(self: mut);
+  work_together(self: mut);
+}
 
-  work(self: mut) {
-    Builtin.print1("Elf {:#} is working\n", self._id);
-  }
+class Process {
+  _participant: Participant & iso;
+  _group: cown[Group] & imm;
+  _enter: cown[Barrier] & imm;
+  _exit: cown[Barrier] & imm;
 
-  consult_with_santa(self: mut) {
-    Builtin.print1("Elf {:#} is meeting with Santa\n", self._id);
-  }
-
-  start(id: U64 & imm, elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm,
-        roomout: cown[Barrier] & imm) {
-    var result = new Elf;
-    result._id = id;
-    result._elveswaiting = elveswaiting;
-    result._roomin = roomin;
-    result._roomout = roomout;
+  start(participant: Participant & iso, group: cown[Group] & imm,
+        enter: cown[Barrier] & imm, exit: cown[Barrier] & imm) {
+    var result = new Process;
+    result._participant = participant;
+    result._group = group;
+    result._enter = enter;
+    result._exit = exit;
     result._loop();
   }
 
   _loop(self: iso) {
-    (mut-view self).work();
-    when(var _ = Group.join(self._elveswaiting)) {
-      when(var _ = Barrier.wait(self._roomin)) {
-        (mut-view self).consult_with_santa();
-        when(var _ = Barrier.wait(self._roomout)) {
+    (mut-view ((mut-view self)._participant)).work_alone();
+    when(var _ = Group.join(self._group)) {
+      when(var _ = Barrier.wait(self._enter)) {
+        (mut-view ((mut-view self)._participant)).work_together();
+        when(var _ = Barrier.wait(self._exit)) {
           self._loop();
         }
       }
     }
+  }
+}
+
+class Elf {
+  _id: U64 & imm;
+
+  create(id: U64 & imm): Elf & iso {
+    var result = new Elf;
+    result._id = id;
+    result
+  }
+
+  work_alone(self: mut) {
+    Builtin.print1("Elf {:#} is working\n", self._id);
+  }
+
+  work_together(self: mut) {
+    Builtin.print1("Elf {:#} is meeting with Santa\n", self._id);
   }
 }
 
 class Reindeer {
   _id: U64 & imm;
-  _reindeerback: cown[Group] & imm;
-  _harness: cown[Barrier] & imm;
-  _unharness: cown[Barrier] & imm;
 
-  holiday(self: mut) {
+  create(id: U64 & imm): Reindeer & iso {
+    var result = new Reindeer;
+    result._id = id;
+    result
+  }
+
+  work_alone(self: mut) {
     Builtin.print1("Reindeer {:#} is on holiday\n", self._id);
   }
 
-  deliver_toys(self: mut) {
+  work_together(self: mut) {
     Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
-  }
-
-  start(id: U64 & imm, reindeerback: cown[Group] & imm,
-        harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm) {
-    var result = new Reindeer;
-    result._id = id;
-    result._reindeerback = reindeerback;
-    result._harness = harness;
-    result._unharness = unharness;
-    result._loop();
-  }
-
-  _loop(self: iso) {
-    (mut-view self).holiday();
-    when(var _ = Group.join(self._reindeerback)) {
-      when(var _ = Barrier.wait(self._harness)) {
-        (mut-view self).deliver_toys();
-        when(var _ = Barrier.wait(self._unharness)) {
-          self._loop();
-        }
-      }
-    }
   }
 }
 
+interface Task { apply(self: mut); }
+class MeetElves {
+  create(): MeetElves & iso { new MeetElves }
+  apply(self: mut) { Builtin.print("Santa is meeting with Elves\n"); }
+}
+class MeetReindeer {
+  create(): MeetReindeer & iso { new MeetReindeer }
+  apply(self: mut) { Builtin.print("Santa is delivering Toys\n"); }
+}
+
 class Santa {
-  consult_with_elves() {
-    Builtin.print("Santa is meeting with Elves\n");
-  }
-
-  meet_elves(santa: cown[Group] & imm, elveswaiting: cown[Group] & imm,
-             roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
-    when(var _ = Group.full(elveswaiting)) {
-      when(var _ = Group.join(santa)) { // using group as a semaphore
-        when(var _ = Barrier.wait(roomin)) {
-          Group.empty(elveswaiting);
-          Santa.consult_with_elves();
-          when(var _ = Barrier.wait(roomout)) {
-            Group.empty(santa);
-            Santa.meet_elves(santa, elveswaiting, roomin, roomout);
-          }
-        }
-      }
-    }
-  }
-
-  deliver_toys() {
-    Builtin.print("Santa is delivering Toys\n")
-  }
-
-  meet_reindeer(santa: cown[Group] & imm, reindeerback: cown[Group] & imm,
-                harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm) {
-    when(var _ = Group.full(reindeerback)) {
+  meet_group(santa: cown[Group] & imm, group: cown[Group] & imm,
+             enter: cown[Barrier] & imm, exit: cown[Barrier] & imm,
+             task: Task & iso) {
+    when(var _ = Group.full(group)) {
+      // use santa group as a semaphore
       when(var _ = Group.join(santa)) {
-        when(var _ = Barrier.wait(harness)) {
-          Group.empty(reindeerback);
-          Santa.deliver_toys();
-          when(var _ = Barrier.wait(unharness)) {
+        when(var _ = Barrier.wait(enter)) {
+          Group.empty(group);
+          (mut-view task).apply();
+          when(var _ = Barrier.wait(exit)) {
             Group.empty(santa);
-            Santa.meet_reindeer(santa, reindeerback, harness, unharness);
+            Santa.meet_group(santa, group, enter, exit, task);
           }
         }
       }
@@ -188,8 +172,8 @@ class Santa {
   start(reindeerback: cown[Group] & imm, harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm,
         elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
     var santa = Group.create(1);
-    Santa.meet_elves(santa, elveswaiting, roomin, roomout);
-    Santa.meet_reindeer(santa, reindeerback, harness, unharness);
+    Santa.meet_group(santa, elveswaiting, roomin, roomout, MeetElves.create());
+    Santa.meet_group(santa, reindeerback, harness, unharness, MeetReindeer.create());
   }
 }
 
@@ -203,25 +187,24 @@ class Main {
     var harness = Barrier.create(10);
     var unharness = Barrier.create(10);
 
-    Santa.start(reindeerback, harness, unharness,
-                elveswaiting, roomin, roomout);
+    Santa.start(reindeerback, harness, unharness, elveswaiting, roomin, roomout);
 
-    Elf.start(1, elveswaiting, roomin, roomout);
-    Elf.start(2, elveswaiting, roomin, roomout);
-    Elf.start(3, elveswaiting, roomin, roomout);
-    Elf.start(4, elveswaiting, roomin, roomout);
-    Elf.start(5, elveswaiting, roomin, roomout);
-    Elf.start(6, elveswaiting, roomin, roomout);
-    Elf.start(7, elveswaiting, roomin, roomout);
+    Process.start(Elf.create(1), elveswaiting, roomin, roomout);
+    Process.start(Elf.create(2), elveswaiting, roomin, roomout);
+    Process.start(Elf.create(3), elveswaiting, roomin, roomout);
+    Process.start(Elf.create(4), elveswaiting, roomin, roomout);
+    Process.start(Elf.create(5), elveswaiting, roomin, roomout);
+    Process.start(Elf.create(6), elveswaiting, roomin, roomout);
+    Process.start(Elf.create(7), elveswaiting, roomin, roomout);
 
-    Reindeer.start(1, reindeerback, harness, unharness);
-    Reindeer.start(2, reindeerback, harness, unharness);
-    Reindeer.start(3, reindeerback, harness, unharness);
-    Reindeer.start(4, reindeerback, harness, unharness);
-    Reindeer.start(5, reindeerback, harness, unharness);
-    Reindeer.start(6, reindeerback, harness, unharness);
-    Reindeer.start(7, reindeerback, harness, unharness);
-    Reindeer.start(8, reindeerback, harness, unharness);
-    Reindeer.start(9, reindeerback, harness, unharness);
+    Process.start(Reindeer.create(1), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(2), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(3), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(4), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(5), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(6), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(7), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(8), reindeerback, harness, unharness);
+    Process.start(Reindeer.create(9), reindeerback, harness, unharness);
   }
 }
