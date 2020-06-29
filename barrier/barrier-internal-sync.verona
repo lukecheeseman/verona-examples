@@ -21,12 +21,14 @@
 
 class Signal {
   _count: U64 & imm;
+  _reset: U64 & imm;
   // Internal signal to trigger all external signals
   _signal: Promise[None] & iso;
 
   create(count: U64 & imm): cown[Signal] & imm {
     var result = new Signal;
     result._count = count;
+    result._reset = count;
     result._signal = Promise.create();
     cown.create(result)
   }
@@ -46,48 +48,11 @@ class Signal {
       // Once the countdown hits zero, trigger the internal signal
       signal._count = signal._count - 1;
       if (signal._count == 0) {
-        (signal._signal).fulfill(new None);
+        (signal._signal = Promise.create()).fulfill(new None);
+        signal._count = signal._reset;
       }
     };
 
     handle
-  }
-}
-
-class Participant {
-  _id: U64 & imm;
-  _signal: cown[Signal] & imm;
-
-  create(id: U64 & imm, signal: cown[Signal] & imm): Participant & iso {
-    var result = new Participant;
-    result._id = id;
-    result._signal = signal;
-    result
-  }
-
-  run(self: iso) {
-    when() {
-      // Run the pre behaviour
-      Builtin.print1("Pre: {:#}\n", self._id);
-
-      Builtin.print1("----- Barrier reached {} ------\n", self._id);
-      // When the signal is fulfilled run the post behaviour
-      when (var _ = Signal.await(self._signal)) {
-        Builtin.print1("Post: {:#}\n", self._id);
-      }
-    }
-  }
-}
-
-class Main {
-  main() {
-    var signal = Signal.create(3);
-    var p1 = Participant.create(1, signal);
-    var p2 = Participant.create(2, signal);
-    var p3 = Participant.create(3, signal);
-
-    p1.run();
-    p2.run();
-    p3.run();
   }
 }
