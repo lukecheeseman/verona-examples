@@ -33,7 +33,7 @@ class Barrier {
     cown.create(result)
   }
 
-  await(barrier: cown[Barrier] & imm): cown[None] & imm {
+  wait(barrier: cown[Barrier] & imm): cown[None] & imm {
     // External barrier for the waiter to wait on
     var promise = Promise.create();
     var handle = (mut-view promise).wait_handle();

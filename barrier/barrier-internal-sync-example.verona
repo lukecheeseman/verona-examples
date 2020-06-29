@@ -18,11 +18,11 @@ class Participant {
 
       Builtin.print1("----- Barrier reached {} ------\n", self._id);
       // When the barrier is fulfilled run the post behaviour
-      when (var _ = Barrier.await(self._barrier)) {
+      when (var _ = Barrier.wait(self._barrier)) {
         Builtin.print1("Mid: {:#}\n", self._id);
 
         Builtin.print1("----- Barrier reached {} ------\n", self._id);
-        when (var _ = Barrier.await(self._barrier)) {
+        when (var _ = Barrier.wait(self._barrier)) {
           Builtin.print1("Post: {:#}\n", self._id);
         }
       }

@@ -1,20 +1,20 @@
 use "../barrier/barrier-internal-sync.verona"
 
 /*
- * Collect is the combination of a Semaphore and a Condition variable
- *   - collect allows only _count number of callers to enter to proceed with exection (fulfilling their promise)
- *   - a caller of full is barrierled once _count number of cals to enter have happened
- *   - once reset is called, _count more callers to enter can proceed
+ * group is the combination of a Semaphore and a Condition variable
+ *   - group allows only _count number of callers to join to proceed with exection (fulfilling their promise)
+ *   - a caller of full is barrierled once _count number of cals to join have happened
+ *   - once reset is called, _count more callers to join can proceed
  */
-class Collect {
+class Group {
   _count: U64 & imm;
   _reset: U64 & imm;
   _empty: Promise[None] & iso;
   _full: Promise[None] & iso;
 
-  // create Collect for count amount
-  create(count: U64 & imm): cown[Collect] & imm {
-    var result = new Collect;
+  // create Group for count amount
+  create(count: U64 & imm): cown[Group] & imm {
+    var result = new Group;
     result._count = count;
     result._reset = count;
     result._empty = Promise.create();
@@ -22,23 +22,23 @@ class Collect {
     cown.create(result)
   }
 
-  // reset the the collect
-  empty(collect: cown[Collect] & imm) {
-    when(collect) {
-      collect._count = collect._reset;
-      (collect._empty = Promise.create()).fulfill(new None);
+  // reset the the group
+  empty(group: cown[Group] & imm) {
+    when(group) {
+      group._count = group._reset;
+      (group._empty = Promise.create()).fulfill(new None);
     }
   }
 
   //
-  full(collect: cown[Collect] & imm): cown[None] & imm {
+  full(group: cown[Group] & imm): cown[None] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
-    when(collect) {
-      if (collect._count == 0) {
+    when(group) {
+      if (group._count == 0) {
         p.fulfill(new None);
       } else {
-        when(var _ = (mut-view (collect._full)).wait_handle()) {
+        when(var _ = (mut-view (group._full)).wait_handle()) {
           p.fulfill(new None);
         }
       }
@@ -46,8 +46,8 @@ class Collect {
     f
   }
 
-  _enter(collect: cown[Collect] & imm, barrier: Promise[None] & iso) {
-    when(var s = collect) {
+  _join(group: cown[Group] & imm, barrier: Promise[None] & iso) {
+    when(var s = group) {
       if (s._count > 0) {
         s._count = s._count - 1;
         barrier.fulfill(new None);
@@ -56,23 +56,23 @@ class Collect {
         }
       } else {
         when (var _ = (mut-view (s._empty)).wait_handle()) {
-          Collect._enter(collect, barrier);
+          Group._join(group, barrier);
         };
       }
     };
   }
 
-  enter(collect: cown[Collect] & imm): cown[None] & imm {
+  join(group: cown[Group] & imm): cown[None] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
-    Collect._enter(collect, p);
+    Group._join(group, p);
     f
   }
 }
 
 class Elf {
   _id: U64 & imm;
-  _elveswaiting: cown[Collect] & imm;
+  _elveswaiting: cown[Group] & imm;
   _roomin: cown[Barrier] & imm;
   _roomout: cown[Barrier] & imm;
 
@@ -84,7 +84,7 @@ class Elf {
     Builtin.print1("Elf {:#} is meeting with Santa\n", self._id);
   }
 
-  start(id: U64 & imm, elveswaiting: cown[Collect] & imm, roomin: cown[Barrier] & imm,
+  start(id: U64 & imm, elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm,
         roomout: cown[Barrier] & imm) {
     var result = new Elf;
     result._id = id;
@@ -96,10 +96,10 @@ class Elf {
 
   _loop(self: iso) {
     (mut-view self).work();
-    when(var _ = Collect.enter(self._elveswaiting)) {
-      when(var _ = Barrier.await(self._roomin)) {
+    when(var _ = Group.join(self._elveswaiting)) {
+      when(var _ = Barrier.wait(self._roomin)) {
         (mut-view self).consult_with_santa();
-        when(var _ = Barrier.await(self._roomout)) {
+        when(var _ = Barrier.wait(self._roomout)) {
           self._loop();
         }
       }
@@ -109,7 +109,7 @@ class Elf {
 
 class Reindeer {
   _id: U64 & imm;
-  _reindeerback: cown[Collect] & imm;
+  _reindeerback: cown[Group] & imm;
   _harness: cown[Barrier] & imm;
   _unharness: cown[Barrier] & imm;
 
@@ -121,7 +121,7 @@ class Reindeer {
     Builtin.print1("Reindeer {:#} is delivering toys\n", self._id);
   }
 
-  start(id: U64 & imm, reindeerback: cown[Collect] & imm,
+  start(id: U64 & imm, reindeerback: cown[Group] & imm,
         harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm) {
     var result = new Reindeer;
     result._id = id;
@@ -133,10 +133,10 @@ class Reindeer {
 
   _loop(self: iso) {
     (mut-view self).holiday();
-    when(var _ = Collect.enter(self._reindeerback)) {
-      when(var _ = Barrier.await(self._harness)) {
+    when(var _ = Group.join(self._reindeerback)) {
+      when(var _ = Barrier.wait(self._harness)) {
         (mut-view self).deliver_toys();
-        when(var _ = Barrier.await(self._unharness)) {
+        when(var _ = Barrier.wait(self._unharness)) {
           self._loop();
         }
       }
@@ -149,15 +149,15 @@ class Santa {
     Builtin.print("Santa is meeting with Elves\n");
   }
 
-  meet_elves(santa: cown[Collect] & imm, elveswaiting: cown[Collect] & imm,
+  meet_elves(santa: cown[Group] & imm, elveswaiting: cown[Group] & imm,
              roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
-    when(var _ = Collect.full(elveswaiting)) {
-      when(var _ = Collect.enter(santa)) { // using collect as a semaphore
-        when(var _ = Barrier.await(roomin)) {
-          Collect.empty(elveswaiting);
+    when(var _ = Group.full(elveswaiting)) {
+      when(var _ = Group.join(santa)) { // using group as a semaphore
+        when(var _ = Barrier.wait(roomin)) {
+          Group.empty(elveswaiting);
           Santa.consult_with_elves();
-          when(var _ = Barrier.await(roomout)) {
-            Collect.empty(santa);
+          when(var _ = Barrier.wait(roomout)) {
+            Group.empty(santa);
             Santa.meet_elves(santa, elveswaiting, roomin, roomout);
           }
         }
@@ -169,15 +169,15 @@ class Santa {
     Builtin.print("Santa is delivering Toys\n")
   }
 
-  meet_reindeer(santa: cown[Collect] & imm, reindeerback: cown[Collect] & imm,
+  meet_reindeer(santa: cown[Group] & imm, reindeerback: cown[Group] & imm,
                 harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm) {
-    when(var _ = Collect.full(reindeerback)) {
-      when(var _ = Collect.enter(santa)) {
-        when(var _ = Barrier.await(harness)) {
-          Collect.empty(reindeerback);
+    when(var _ = Group.full(reindeerback)) {
+      when(var _ = Group.join(santa)) {
+        when(var _ = Barrier.wait(harness)) {
+          Group.empty(reindeerback);
           Santa.deliver_toys();
-          when(var _ = Barrier.await(unharness)) {
-            Collect.empty(santa);
+          when(var _ = Barrier.wait(unharness)) {
+            Group.empty(santa);
             Santa.meet_reindeer(santa, reindeerback, harness, unharness);
           }
         }
@@ -185,9 +185,9 @@ class Santa {
     }
   }
 
-  start(reindeerback: cown[Collect] & imm, harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm,
-        elveswaiting: cown[Collect] & imm, roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
-    var santa = Collect.create(1);
+  start(reindeerback: cown[Group] & imm, harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm,
+        elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
+    var santa = Group.create(1);
     Santa.meet_elves(santa, elveswaiting, roomin, roomout);
     Santa.meet_reindeer(santa, reindeerback, harness, unharness);
   }
@@ -195,11 +195,11 @@ class Santa {
 
 class Main {
   main() {
-    var elveswaiting = Collect.create(3);
+    var elveswaiting = Group.create(3);
     var roomin = Barrier.create(4);
     var roomout = Barrier.create(4);
 
-    var reindeerback = Collect.create(9);
+    var reindeerback = Group.create(9);
     var harness = Barrier.create(10);
     var unharness = Barrier.create(10);
 
