@@ -22,7 +22,8 @@ class Group {
     cown.create(result)
   }
 
-  // reset the the group
+  // reset the the group, signalling all processes that are waiting to
+  // join the group that the group is empty
   empty(group: cown[Group] & imm) {
     when(group) {
       group._count = group._reset;
@@ -30,7 +31,7 @@ class Group {
     }
   }
 
-  //
+  // subscribe to get informed when the group is full
   full(group: cown[Group] & imm): cown[None] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
@@ -46,22 +47,26 @@ class Group {
     f
   }
 
-  _join(group: cown[Group] & imm, barrier: Promise[None] & iso) {
+  // try to join the group
+  //   - if there is space signal that participant and decrement the count
+  //   - otherwise, wait for a signal that the group is empty
+  _join(group: cown[Group] & imm, signal: Promise[None] & iso) {
     when(var s = group) {
       if (s._count > 0) {
         s._count = s._count - 1;
-        barrier.fulfill(new None);
+        signal.fulfill(new None);
         if (s._count == 0) {
           (s._full = Promise.create()).fulfill(new None);
         }
       } else {
         when (var _ = (mut-view (s._empty)).wait_handle()) {
-          Group._join(group, barrier);
+          Group._join(group, signal);
         };
       }
     };
   }
 
+  // try to join the group, getting notified on success
   join(group: cown[Group] & imm): cown[None] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
@@ -70,11 +75,16 @@ class Group {
   }
 }
 
+// An interface for Elf and Reindeer participants
 interface Participant {
   work_alone(self: mut);
   work_together(self: mut);
 }
 
+// Elves and Reindeer are processes with
+//   - working alone and together task
+//   - a group that they try to join
+//   - synchronisation primitves for starting and finishing the colloborative tasks
 class Process {
   _participant: Participant & iso;
   _group: cown[Group] & imm;
@@ -91,6 +101,12 @@ class Process {
     result._loop();
   }
 
+  // The lifecycle of a participant
+  //   - work alone
+  //   - try to join the colloborative group
+  //   - synchronise on starting the colloborative task
+  //   - synchronise on finishing the colloborative task
+  //   - repeat
   _loop(self: iso) {
     (mut-view ((mut-view self)._participant)).work_alone();
     when(var _ = Group.join(self._group)) {
@@ -104,6 +120,7 @@ class Process {
   }
 }
 
+// Elves are either working along are meeting for R&D with Santa
 class Elf {
   _id: U64 & imm;
 
@@ -122,6 +139,7 @@ class Elf {
   }
 }
 
+// Reindeer are either on holidate or delviering toys with Santa
 class Reindeer {
   _id: U64 & imm;
 
@@ -151,6 +169,13 @@ class MeetReindeer {
 }
 
 class Santa {
+  //  Santa tries to meet a group as follows:
+  //    - waiting for a signal that the group is full
+  //    - using a group of one as a semaphore for Santa (enabling only one Santa task)
+  //    - sychronising on starting a colloborative task
+  //    - syncrhonising on finishing a colloborative task
+  //    - emptying the santa group (uping the semaphore and allowing another Santa task)
+  //    - creating another behaviour that does the same
   meet_group(santa: cown[Group] & imm, group: cown[Group] & imm,
              enter: cown[Barrier] & imm, exit: cown[Barrier] & imm,
              task: Task & iso) {
@@ -169,6 +194,9 @@ class Santa {
     }
   }
 
+  // Create two behaviours
+  //   - one tries to meet elves
+  //   - one tries to meet reindeer
   start(reindeerback: cown[Group] & imm, harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm,
         elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
     var santa = Group.create(1);
@@ -179,14 +207,21 @@ class Santa {
 
 class Main {
   main() {
+    // Create elves synchronisation mechanism
+    //   - a group for 3 elves
+    //   - start and end barriers for the 3 elves and Santa
     var elveswaiting = Group.create(3);
     var roomin = Barrier.create(4);
     var roomout = Barrier.create(4);
 
+    // Create reindeer synchronisation mechanism
+    //   - a group for 9 reindeer
+    //   - start and end barriers for the 9 reindeer and Santa
     var reindeerback = Group.create(9);
     var harness = Barrier.create(10);
     var unharness = Barrier.create(10);
 
+    // Start all participants
     Santa.start(reindeerback, harness, unharness, elveswaiting, roomin, roomout);
 
     Process.start(Elf.create(1), elveswaiting, roomin, roomout);
