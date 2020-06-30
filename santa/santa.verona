@@ -2,7 +2,7 @@ use "../barrier/barrier-internal-sync.verona"
 
 /*
  * group is the combination of a Semaphore and a Condition variable
- *   - group allows only _count number of callers to join to proceed with exection (fulfilling their promise)
+ *   - group allows only _count number of callers to join and proceed with execution (fulfilling their promise)
  *   - a caller of full is barrierled once _count number of cals to join have happened
  *   - once reset is called, _count more callers to join can proceed
  */
@@ -84,7 +84,7 @@ interface Participant {
 // Elves and Reindeer are processes with
 //   - working alone and together task
 //   - a group that they try to join
-//   - synchronisation primitves for starting and finishing the collaborative tasks
+//   - synchronisation primitves for starting and finishing the colloborative tasks
 class Process {
   _participant: Participant & iso;
   _group: cown[Group] & imm;
@@ -103,9 +103,9 @@ class Process {
 
   // The lifecycle of a participant
   //   - work alone
-  //   - try to join the collaborative group
-  //   - synchronise on starting the collaborative task
-  //   - synchronise on finishing the collaborative task
+  //   - try to join the colloborative group
+  //   - synchronise on starting the colloborative task
+  //   - synchronise on finishing the colloborative task
   //   - repeat
   _loop(self: iso) {
     (mut-view ((mut-view self)._participant)).work_alone();
@@ -118,6 +118,22 @@ class Process {
       }
     }
   }
+
+  /* The desired loop could look like
+  loop(self: iso) {
+    while (true) {
+      (mut-view ((mut-view self)._participant)).work_alone();
+
+      await(var _ = Group.join(self._group));
+
+      await(var _ = Barrier.wait(self._enter));
+
+      (mut-view ((mut-view self)._participant)).work_together();
+
+      await(var _ = Barrier.wait(self._exit));
+    }
+  }
+  */
 }
 
 // Elves are either working along are meeting for R&D with Santa
@@ -172,8 +188,8 @@ class Santa {
   //  Santa tries to meet a group as follows:
   //    - waiting for a signal that the group is full
   //    - using a group of one as a semaphore for Santa (enabling only one Santa task)
-  //    - sychronising on starting a collaborative task
-  //    - syncrhonising on finishing a collaborative task
+  //    - sychronising on starting a colloborative task
+  //    - syncrhonising on finishing a colloborative task
   //    - emptying the santa group (uping the semaphore and allowing another Santa task)
   //    - creating another behaviour that does the same
   meet_group(santa: cown[Group] & imm, group: cown[Group] & imm,
