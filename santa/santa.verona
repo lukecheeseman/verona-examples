@@ -124,13 +124,13 @@ class Process {
     while (true) {
       (mut-view ((mut-view self)._participant)).work_alone();
 
-      await(var _ = Group.join(self._group));
+      await(Group.join(self._group));
 
-      await(var _ = Barrier.wait(self._enter));
+      await(Barrier.wait(self._enter));
 
       (mut-view ((mut-view self)._participant)).work_together();
 
-      await(var _ = Barrier.wait(self._exit));
+      await(Barrier.wait(self._exit));
     }
   }
   */
