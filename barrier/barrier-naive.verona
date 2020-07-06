@@ -26,7 +26,7 @@ class Participant
   }
 
   delayBeforeBarrier(self: imm, i: U64 & imm) {
-    Builtin.print1("    part {} before \n", self._id);
+    Builtin.print2("    part {} before {}\n", self._id, i);
     if (i >= 3) {
       self.delayBeforeBarrier(i - 1);
     }
@@ -35,7 +35,7 @@ class Participant
   delayAfterBarrier(self: imm, i: U64 & imm) {
     Builtin.print1("    part {} after \n", self._id);
     if (i >= 3) {
-      self.delayBeforeBarrier(i - 1);
+      self.delayAfterBarrier(i - 1);
     }
   }
 

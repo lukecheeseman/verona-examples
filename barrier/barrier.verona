@@ -97,13 +97,15 @@ class Main {
   main() {
     var barrier = Barrier.create();
     var p1 = Participant.create(1, barrier);
+    p1.pre();
+
     var p2 = Participant.create(2, barrier);
+    p2.pre();
+
     var p3 = Participant.create(3, barrier);
     var p4 = Participant.create(4, barrier);
     var p5 = Participant.create(5, barrier);
 
-    p1.pre();
-    p2.pre();
     p3.pre();
     p4.pre();
     p5.pre();
