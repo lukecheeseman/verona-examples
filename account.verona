@@ -1,0 +1,39 @@
+/* Example accessing two accounts and transfering money.
+ * Demonstrates safe exclusive mutable access, without locking, transaction or two-phase commit
+ */
+class Account {
+    _balance: U64 & imm;
+
+    create(opening: U64 & imm): Account & iso {
+        var result = new Account;
+        result._balance = opening;
+        result
+    }
+
+    withdraw(self: mut, amount: U64 & imm) {
+        self._balance = self._balance - amount;
+    }
+
+    deposit(self: mut, amount: U64 & imm) {
+        self._balance = self._balance + amount;
+    }
+}
+
+class Main {
+
+    transfer(acc1: cown[Account] & imm, acc2: cown[Account] & imm,
+             amount: U64 & imm)
+    {
+        when(acc1, acc2) {
+            acc1.withdraw(amount);
+            acc2.deposit(amount);
+        }
+    }
+
+    main() {
+        var acc1 = cown.create(Account.create(500));
+        var acc2 = cown.create(Account.create(300));
+
+        Main.transfer(acc1, acc2, 30);
+    }
+}

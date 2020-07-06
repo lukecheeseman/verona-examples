@@ -1,0 +1,38 @@
+class Semaphore {
+  _count: U64 & imm;
+  _signal: Promise[None] & iso;
+
+  create(count: U64 & imm): cown[Semaphore] & imm {
+    var result = new Semaphore;
+    result._count = count;
+    result._signal = Promise.create();
+    cown.create(result)
+  }
+
+  up(sema: cown[Semaphore] & imm) {
+    when(sema) {
+      sema._count = sema._count + 1;
+      (sema._signal = Promise.create()).fulfill(new None);
+    }
+  }
+
+  _down(sema: cown[Semaphore] & imm, promise: Promise[None] & iso) {
+    when(var s = sema) {
+      if (s._count > 0) {
+        s._count = s._count - 1;
+        promise.fulfill(new None);
+      } else {
+        when (var _ = (mut-view (s._signal)).wait_handle()) {
+          Semaphore._down(sema, promise);
+        };
+      }
+    };
+  }
+
+  down(sema: cown[Semaphore] & imm): cown[None] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    Semaphore._down(sema, p);
+    f
+  }
+}

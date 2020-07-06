@@ -1,0 +1,15 @@
+// either(a).or(b) - gives you one cown
+
+class Main {
+
+  either(a: cown[U64Obj] & imm, b: cown[U64Obj] & imm) {
+
+  }
+
+  main() {
+    either (a, b);
+    when (a | b) { // with this could you encode santa?
+
+    }
+  }
+}

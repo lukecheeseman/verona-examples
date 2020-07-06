@@ -24,13 +24,10 @@ class Pair[P, Q]{
   }
 }
 
-class U64Hash {
-  hash(o: U64): U64 { o }
-}
-
 class Just[T] {
   _data: T;
 }
+
 class Maybe[T] {
   _data: (Just[T] & iso) | (None & imm);
 
@@ -111,6 +108,10 @@ class HashMap {
     };
     r
   }
+}
+
+class U64Hash {
+  hash(o: U64): U64 { o }
 }
 
 class Main {

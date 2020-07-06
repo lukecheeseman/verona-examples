@@ -1,0 +1,68 @@
+class Cell {
+  data: (None & imm) | (U64Obj & iso);
+
+  create(): Cell & iso {
+    var result = new Cell;
+    result.data = Builtin.freeze(new None);
+    result
+  }
+
+  ready(self: mut): U64 & imm {
+    match (self.data) {
+      var _: None => 0,
+      var _: U64Obj => 1,
+    }
+  }
+
+  read(self: mut): (None & imm) | (U64Obj & iso) {
+    self.data = Builtin.freeze(new None)
+  }
+}
+
+class MyPromise {
+  data: cown[Cell] & imm;
+
+  create(): MyPromise & iso {
+    var result = new MyPromise;
+    result.data = cown.create(Cell.create());
+    result
+  }
+
+  wait_handle(self: mut): cown[Cell] & imm {
+    self.data
+  }
+
+  fulfill(self: iso, value: U64 & imm) {
+    when(var data = self.data) {
+      match(data.data) {
+        var _: None => { data.data = U64Obj.create(value) }
+      };
+    };
+  }
+}
+
+class Main {
+  read(cell: cown[Cell] & imm) {
+    when(var c = cell) {
+      if (c.ready()) {
+        match (c.read()) {
+          var _: None => Builtin.print("Something else read contents\n"),
+          var o: U64Obj => Builtin.print1("Contents: {:#}\n", o.v),
+        }
+      } else {
+        Builtin.print("Cell not ready\n");
+        Main.read(cell);
+      };
+    };
+  }
+
+  main() {
+    var p = MyPromise.create();
+
+    Main.read((mut-view p).wait_handle());
+
+    when() {
+      p.fulfill(12);
+    }
+  }
+}
