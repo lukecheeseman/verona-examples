@@ -44,7 +44,7 @@ class Condition {
 class Cell[T] {
   _data: (T & iso) | (None & imm);
 
-  create(data: T & iso): Cell[T] & iso {
+  create(data: (T & iso) | (None & imm)): Cell[T] & iso {
     var result = new Cell;
     result._data = data;
     result
@@ -142,6 +142,7 @@ class Consumer[T: iso] {
 }
 
 /* Create a producer and consumer that share a channel */
+/*
 class Main {
   main() {
     var channel = Channel.create();
@@ -163,4 +164,4 @@ class Main {
       (mut-view c).consume();
     };
   }
-}
+}*/
