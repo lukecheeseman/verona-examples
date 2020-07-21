@@ -1,0 +1,23 @@
+class Signal {
+  _signal: Promise[None] & iso;
+
+  create(): Signal & iso {
+    var result = new Signal;
+    result._signal = Promise.create();
+    result
+  }
+
+  await(self: mut): cown[None] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    when(var _ = (mut-view (self._signal)).wait_handle()) {
+      p.fulfill(new None);
+    };
+    f
+  }
+
+  signal(self: mut) {
+    (self._signal = Promise.create()).fulfill(new None);
+  }
+
+}

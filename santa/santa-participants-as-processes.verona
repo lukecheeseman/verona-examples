@@ -3,22 +3,22 @@ use "../barrier/barrier-internal-sync.verona"
 /*
  * group is the combination of a Semaphore and a Condition variable
  *   - group allows only _count number of callers to join and proceed with execution (fulfilling their promise)
- *   - a caller of full is barrierled once _count number of cals to join have happened
+ *   - a caller of ready is barrierled once _count number of cals to join have happened
  *   - once reset is called, _count more callers to join can proceed
  */
 class Group {
   _count: U64 & imm;
   _reset: U64 & imm;
-  _empty: Promise[None] & iso;
-  _full: Promise[None] & iso;
+  _empty: Signal & iso;
+  _ready: Signal & iso;
 
   // create Group for count amount
   create(count: U64 & imm): cown[Group] & imm {
     var result = new Group;
     result._count = count;
     result._reset = count;
-    result._empty = Promise.create();
-    result._full = Promise.create();
+    result._empty = Signal.create();
+    result._ready = Signal.create();
     cown.create(result)
   }
 
@@ -27,39 +27,43 @@ class Group {
   empty(group: cown[Group] & imm) {
     when(group) {
       group._count = group._reset;
-      (group._empty = Promise.create()).fulfill(new None);
+      (mut-view (group._empty)).signal();
     }
   }
 
-  // subscribe to get informed when the group is full
-  full(group: cown[Group] & imm): cown[None] & imm {
-    var p = Promise.create();
-    var f = (mut-view p).wait_handle();
+  // subscribe to get informed when the group is ready
+  ready(group: cown[Group] & imm): cown[None] & imm {
+    var s = Signal.create();
+    var f = (mut-view s).await();
     when(group) {
       if (group._count == 0) {
-        p.fulfill(new None);
+        (mut-view s).signal();
       } else {
-        when(var _ = (mut-view (group._full)).wait_handle()) {
-          p.fulfill(new None);
+        when(var _ = (mut-view (group._ready)).await()) {
+          (mut-view s).signal();
         }
       }
     };
     f
   }
 
+  is_ready(self: mut): U64 & imm {
+    self._count == 0
+  }
+
   // try to join the group
   //   - if there is space signal that participant and decrement the count
   //   - otherwise, wait for a signal that the group is empty
-  _join(group: cown[Group] & imm, signal: Promise[None] & iso) {
+  _join(group: cown[Group] & imm, signal: Signal & iso) {
     when(var s = group) {
       if (s._count > 0) {
         s._count = s._count - 1;
-        signal.fulfill(new None);
+        (mut-view signal).signal();
         if (s._count == 0) {
-          (s._full = Promise.create()).fulfill(new None);
+          (mut-view (s._ready)).signal();
         }
       } else {
-        when (var _ = (mut-view (s._empty)).wait_handle()) {
+        when (var _ = (mut-view (s._empty)).await()) {
           Group._join(group, signal);
         };
       }
@@ -68,9 +72,9 @@ class Group {
 
   // try to join the group, getting notified on success
   join(group: cown[Group] & imm): cown[None] & imm {
-    var p = Promise.create();
-    var f = (mut-view p).wait_handle();
-    Group._join(group, p);
+    var s = Signal.create();
+    var f = (mut-view s).await();
+    Group._join(group, s);
     f
   }
 }
@@ -136,7 +140,7 @@ class Process {
   */
 }
 
-// Elves are either working along are meeting for R&D with Santa
+// Elves are either working alone or meeting for R&D with Santa
 class Elf {
   _id: U64 & imm;
 
@@ -155,7 +159,7 @@ class Elf {
   }
 }
 
-// Reindeer are either on holidate or delviering toys with Santa
+// Reindeer are either on holiday or delviering toys with Santa
 class Reindeer {
   _id: U64 & imm;
 
@@ -174,36 +178,57 @@ class Reindeer {
   }
 }
 
-interface Task { apply(self: mut); }
-class MeetElves {
-  create(): MeetElves & iso { new MeetElves }
-  apply(self: mut) { Builtin.print("Santa is meeting with Elves\n"); }
-}
-class MeetReindeer {
-  create(): MeetReindeer & iso { new MeetReindeer }
-  apply(self: mut) { Builtin.print("Santa is delivering Toys\n"); }
+class Santa {
+  deliver_toys() {
+    Builtin.print("Santa is delivering toys\n");
+  }
+
+  meet_elves() {
+    Builtin.print("Santa is meeting elves\n");
+  }
 }
 
-class Santa {
+class Workshop {
   //  Santa tries to meet a group as follows:
-  //    - waiting for a signal that the group is full
+  //    - waiting for a signal that the group is ready
   //    - using a group of one as a semaphore for Santa (enabling only one Santa task)
   //    - sychronising on starting a colloborative task
   //    - syncrhonising on finishing a colloborative task
   //    - emptying the santa group (uping the semaphore and allowing another Santa task)
   //    - creating another behaviour that does the same
-  meet_group(santa: cown[Group] & imm, group: cown[Group] & imm,
-             enter: cown[Barrier] & imm, exit: cown[Barrier] & imm,
-             task: Task & iso) {
-    when(var _ = Group.full(group)) {
-      // use santa group as a semaphore
+  _meet_elves(santa: cown[Group] & imm, reindeerback: cown[Group] & imm,
+              elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm,
+              roomout: cown[Barrier] & imm) {
+    when(var _ = Group.ready(elveswaiting)) {
+      when(var _ = Group.join(santa), var rb = reindeerback) {
+        if (rb.is_ready()) {
+          Group.empty(santa);
+          Workshop._meet_elves(santa, reindeerback, elveswaiting, roomin, roomout);
+        } else {
+          when(var _ = Barrier.wait(roomin)) {
+            Group.empty(elveswaiting);
+            Santa.meet_elves();
+            when(var _ = Barrier.wait(roomout)) {
+              Group.empty(santa);
+              Workshop._meet_elves(santa, reindeerback, elveswaiting, roomin, roomout);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  _meet_reindeer(santa: cown[Group] & imm,
+                 reindeerback: cown[Group] & imm, harness: cown[Barrier] & imm,
+                 unharness: cown[Barrier] & imm) {
+    when(var _ = Group.ready(reindeerback)) {
       when(var _ = Group.join(santa)) {
-        when(var _ = Barrier.wait(enter)) {
-          Group.empty(group);
-          (mut-view task).apply();
-          when(var _ = Barrier.wait(exit)) {
+        when(var _ = Barrier.wait(harness)) {
+          Group.empty(reindeerback);
+          Santa.deliver_toys();
+          when(var _ = Barrier.wait(unharness)) {
             Group.empty(santa);
-            Santa.meet_group(santa, group, enter, exit, task);
+            Workshop._meet_reindeer(santa, reindeerback, harness, unharness);
           }
         }
       }
@@ -216,8 +241,8 @@ class Santa {
   start(reindeerback: cown[Group] & imm, harness: cown[Barrier] & imm, unharness: cown[Barrier] & imm,
         elveswaiting: cown[Group] & imm, roomin: cown[Barrier] & imm, roomout: cown[Barrier] & imm) {
     var santa = Group.create(1);
-    Santa.meet_group(santa, elveswaiting, roomin, roomout, MeetElves.create());
-    Santa.meet_group(santa, reindeerback, harness, unharness, MeetReindeer.create());
+    Workshop._meet_elves(santa, reindeerback, elveswaiting, roomin, roomout);
+    Workshop._meet_reindeer(santa, reindeerback, harness, unharness);
   }
 }
 
@@ -238,7 +263,7 @@ class Main {
     var unharness = Barrier.create(10);
 
     // Start all participants
-    Santa.start(reindeerback, harness, unharness, elveswaiting, roomin, roomout);
+    Workshop.start(reindeerback, harness, unharness, elveswaiting, roomin, roomout);
 
     Process.start(Elf.create(1), elveswaiting, roomin, roomout);
     Process.start(Elf.create(2), elveswaiting, roomin, roomout);
