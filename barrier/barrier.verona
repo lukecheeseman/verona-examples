@@ -1,113 +1,46 @@
-use "list.verona"
-
-/*
- * Example of how several behaviours can be scheduled to coordinate
- * and meet at a certain point.
+/* Barrier with promises
  *
- * Main creates a Barrier, each Participant notifies a Barrier the
- * Participant is created. This increments the number of expected
- * Participants for a blocking call.
- *
- * Participants do some work (pre) then call block on the Barrier and
- * the Participant passes itself to the Barrier. A Barrier aggregates
- * the Participants together until all Participants have called block.
- *
- * Once all Participants have blocked, the Barreir will dispatch
- * all Participants to do some more work (post).
- *
- * Observation: synchronisation is handled by a third party collecting up all
- * of the participants (in fact this is a very similar implementation to barrier-promise
- * but here an object is used to collect the participants instead of promises and a scheduling
- * when). Then number of participants involved must be stated ahead of time, is this inflexible?
+ * A barrier object has a count of how many waiters it expects. Calling wait with a barrier decrements
+ * the count of that barrier and returns a cown for the caller to wait on. When the internal signal is
+ * made trigger, all signals are also triggered.
  */
 
-class Participant {
-  _barrier: cown[Barrier] & imm;
-  _id: U64 & imm;
-
-  create(id: U64 & imm, barrier: cown[Barrier] & imm): Participant & iso {
-    var result = new Participant;
-    Barrier.notify(barrier);
-    result._barrier = barrier;
-    result._id = id;
-    result
-  }
-
-  // Some asynchronous work to do and then block, waiting for all Participants
-  // to reach the same point.
-  pre(self: iso) {
-    when() {
-      Builtin.print1("Pre: {:#}\n", self._id);
-      Barrier.block(self._barrier, self);
-    }
-  }
-
-  // Some asynchronous work to do afterwards
-  post(self: iso) {
-    when() {
-      Builtin.print1("Post: {:#}\n", self._id);
-    }
-  }
-}
+use "signal.verona"
 
 class Barrier {
-  _ps: Queue[Participant] & iso;
-  _n: U64 & imm;
+  _count: U64 & imm;
+  _reset: U64 & imm;
+  // Internal barrier to trigger all external barriers
+  _internal: Signal & iso;
 
-  create(): cown[Barrier] & imm {
+  create(count: U64 & imm): cown[Barrier] & imm {
     var result = new Barrier;
-    result._ps = Queue.create(0);
-    result._n = 0;
+    result._count = count;
+    result._reset = count;
+    result._internal = Signal.create();
     cown.create(result)
   }
 
-  // Increase the counter for expected participants to call block.
-  notify(barrier: cown[Barrier] & imm) {
-    when(barrier) {
-      barrier._n = barrier._n + 1;
-    }
-  }
+  wait(barrier: cown[Barrier] & imm): cown[None] & imm {
+    // External barrier for the waiter to wait on
+    var external = Signal.create();
+    var future = (mut-view external).await();
 
-  // Call post on all blocked Participants.
-  _dispatch(ps: Queue[Participant] & iso) {
-    match((mut-view ps).remove()) {
-      var _: None => {} // we're done
-      var p: Participant => {
-        p.post();
-        Barrier._dispatch(ps);
+    when (barrier) {
+      // When the internal barrier triggers, trigger the external barrier, this
+      // means that all external barriers trigger at the same time.
+      when (var _ = (mut-view (barrier._internal)).await()) {
+        (mut-view external).signal();
+      };
+
+      // Once the countdown hits zero, trigger the internal barrier
+      barrier._count = barrier._count - 1;
+      if (barrier._count == 0) {
+        (mut-view (barrier._internal)).signal();
+        barrier._count = barrier._reset;
       }
-    }
-  }
+    };
 
-  // Block a Participant, decrementing the count for expected number
-  // of Participants to call block. Once all Participants have called
-  // block, dispatch all Partcipants.
-  block(barrier: cown[Barrier] & imm, p: Participant & iso) {
-    when(barrier) {
-      (mut-view (barrier._ps)).add(p);
-      barrier._n = barrier._n - 1;
-      if (barrier._n == 0) {
-        Barrier._dispatch(barrier._ps = Queue.create(0));
-      }
-    }
-  }
-}
-
-class Main {
-  main() {
-    var barrier = Barrier.create();
-    var p1 = Participant.create(1, barrier);
-    p1.pre();
-
-    var p2 = Participant.create(2, barrier);
-    p2.pre();
-
-    var p3 = Participant.create(3, barrier);
-    var p4 = Participant.create(4, barrier);
-    var p5 = Participant.create(5, barrier);
-
-    p3.pre();
-    p4.pre();
-    p5.pre();
+    future
   }
 }

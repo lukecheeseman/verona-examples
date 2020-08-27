@@ -1,4 +1,4 @@
-use "../barrier/barrier-internal-sync.verona"
+use "../barrier/barrier.verona"
 
 /*
  * group is the combination of a Semaphore and a Condition variable

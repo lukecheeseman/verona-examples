@@ -1,7 +1,9 @@
-# Synchronisation points
+# Barrier Synchronisation 
 
-The purpose of this subdirectory is how the cown model can be used to create synchronisation
-points between multiple objects colluding together.
+The purpose of this subdirectory is how cowns and behaviours can be used to create barrier synchronisation between partcipants.
 
-The examples in this subdirectory use a mixture of naive implementations, promises, third-party
-authorities and global knowledge.
+This subdirectory contains the following designs:
+- behaviour-ordering.verona: synchronisation through behaviour ordering constraints.
+- data-flow.verona: synchronisation through promises and participants being passed between behaviours.
+- exchange-promises.verona: synchronisations through participants awaiting promises fulfilled by other partcipants.
+- sophisticated.verona: synchronisation through a barrier object, built using promises, to which participants subscribe.

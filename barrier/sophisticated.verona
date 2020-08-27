@@ -1,4 +1,16 @@
-use "barrier-internal-sync.verona"
+/* Use of Barrier class
+ *
+ * Create three participants that synchronise at the same point in a method, here scheduling
+ * is done internally by the participant.
+ *
+ * The three participants use a shared barrier to synchronise, once each participant has executed
+ * pre() they wait, when all three have reached the barrier then they can all execute post().
+ *
+ * Observations: The participant can place all behaviour in a single method and they have fine
+ * grained control over the location of the synchronisation point.
+ */
+
+use "barrier.verona"
 
 class Participant {
   _id: U64 & imm;

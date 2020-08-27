@@ -1,0 +1,71 @@
+/*
+ * A simple way for barrier synchronization
+ * We have 3 participants; and 2 phases:
+ *  - Before-barrier phase: participants work separately and concurrently.
+ *    Then they wait until all of them have reached the barrier.
+ *  - After-barrier phase: participants work separately and concurrently.
+ *
+ * The implementation uses one cown per participant.
+ * The main program spawns the pre-barrier phase for each of them given them
+ * their cown.
+ * Then it when-s on all the cowns, and spawns the after-barrier phase for all
+ * of them.
+ */
+
+class Participant
+{
+  _id: U64 & imm;
+  _idletime: U64 & imm;
+  _resource: cown[U64Obj] & imm;
+
+  create(id: U64 & imm, idletime: U64 & imm, resource: cown[U64Obj] & imm): cown[Participant] & imm {
+    var p = new Participant;
+    Builtin.print1("created participant {}\n", id);
+    p._id = id;
+    p._idletime = idletime;
+    p._resource = resource;
+    cown.create(p)
+  }
+
+  pre(self: mut) {
+    var id = self._id;
+    Builtin.print1("---- part {} reached barrier\n", self._id);
+    when (var r = self._resource) {
+      Builtin.print2("---- part {} mutates {}\n", id, r);
+      r.v = (r.v) + 1;
+    }
+  }
+
+  post(self: mut) {
+    var id = self._id;
+    when (var r = self._resource) {
+      Builtin.print1("---- part {} is finished\n", id);
+    }
+  }
+}
+
+class Main {
+  main() {
+    var o = cown.create(U64Obj.create(1));
+    var p1 = Participant.create(10,4, o);
+    var p2 = Participant.create(30,8, o);
+    Builtin.print("\n====== Created two participants ======\n");
+
+    /* associate each of the participants with a seperate cown, obtaining
+     * access to it and preventing the later, post barrier, behaviour from
+     * running.
+     */
+    when(p1) { p1.pre(); };
+    when(p2) { p2.pre(); };
+
+    /* it is necessary for this when to be dependent on the 3 cowns here,
+     * listing them as resources necessary creates a causal relation that means
+     * the 3 earlier behaviours _must_ run before this behaviour.
+     */
+    when(var _1 = p1, var _2 = p2){
+      Builtin.print("\n====== Both have reached barrier ======\n");
+      when(p1) { p1.post(); };
+      when(p2) { p2.post(); };
+    }
+  }
+}
