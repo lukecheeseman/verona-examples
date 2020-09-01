@@ -7,8 +7,22 @@ class Signal {
     result
   }
 
+  /* allocate a new promise per call to await and hand
+   * the caller its future, when the internal promise
+   * is fulfilled, the external promise will be fulfilled.
+   * We do not give a future to the internal promise as only
+   * one behaviour can access a promise at a time, therefore
+   * we will trigger each external signal one after the other
+   * and enable waiting behaviours to run at the same time
+   * instead of serialising waiting behaviours
+   */
   await(self: mut): cown[None] & imm {
-    (mut-view (self._signal)).wait_handle()
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    when(var _ = (mut-view (self._signal)).wait_handle()) {
+      p.fulfill(new None);
+    };
+    f
   }
 
   signal(self: mut) {
