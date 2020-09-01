@@ -8,12 +8,7 @@ class Signal {
   }
 
   await(self: mut): cown[None] & imm {
-    var p = Promise.create();
-    var f = (mut-view p).wait_handle();
-    when(var _ = (mut-view (self._signal)).wait_handle()) {
-      p.fulfill(new None);
-    };
-    f
+    (mut-view (self._signal)).wait_handle()
   }
 
   signal(self: mut) {
