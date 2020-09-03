@@ -1,0 +1,218 @@
+/*
+ * A common Utensil interface to capture anything
+ * the Philosopers can use to eat.
+ */
+interface Utensil {
+  use(self: mut);
+}
+
+class Fork {
+  count: U64 & imm;
+
+  create(): Fork & iso {
+    var result = new Fork;
+    result.count = 0;
+    result
+  }
+
+  use(self: mut) {
+    self.count = self.count + 1;
+  }
+}
+
+class Spoon {
+  count: U64 & imm;
+
+  create(): Spoon & iso {
+    var result = new Spoon;
+    result.count = 0;
+    result
+  }
+
+  use(self: mut) {
+    self.count = self.count + 1;
+  }
+}
+
+class Table {
+  count: U64 & imm;
+
+  // The table has a collection of forks and spoons
+  f1: cown[Fork] & imm;
+  f2: cown[Fork] & imm;
+  f3: cown[Fork] & imm;
+  f4: cown[Fork] & imm;
+  f5: cown[Fork] & imm;
+
+  s1: cown[Spoon] & imm;
+  s2: cown[Spoon] & imm;
+  s3: cown[Spoon] & imm;
+  s4: cown[Spoon] & imm;
+  s5: cown[Spoon] & imm;
+
+  create(): cown[Table] & imm {
+    var result = new Table;
+
+    result.count = 0;
+
+    // create the utensils
+    result.f1 = cown.create(Fork.create());
+    result.f2 = cown.create(Fork.create());
+    result.f3 = cown.create(Fork.create());
+    result.f4 = cown.create(Fork.create());
+    result.f5 = cown.create(Fork.create());
+
+    result.s1 = cown.create(Spoon.create());
+    result.s2 = cown.create(Spoon.create());
+    result.s3 = cown.create(Spoon.create());
+    result.s4 = cown.create(Spoon.create());
+    result.s5 = cown.create(Spoon.create());
+
+    cown.create(result)
+  }
+
+  /*
+   * When a Philosopher informs the table that they are finished, the table
+   * either serves_main (replacing the Philosophers Utensil from a Fork to
+   * a Spoon) or the Philosopher has finished eating.
+   */
+  finish(table: cown[Table] & imm, p: Philosopher & iso) {
+    when (var t = table) {
+      t.count = t.count + 1;
+      if (t.count == 10) {
+        when (var f1 = t.f1, var f2 = t.f2, var f3 = t.f3, var f4 = t.f4, var f5 = t.f5,
+              var s1 = t.s1, var s2 = t.s2, var s3 = t.s3, var s4 = t.s4, var s5 = t.s5) {
+          Builtin.print1("Fork 1 used {:#} time(s)\n", f1.count);
+          Builtin.print1("Fork 2 used {:#} time(s)\n", f2.count);
+          Builtin.print1("Fork 3 used {:#} time(s)\n", f3.count);
+          Builtin.print1("Fork 4 used {:#} time(s)\n", f4.count);
+          Builtin.print1("Fork 5 used {:#} time(s)\n", f5.count);
+
+          Builtin.print1("Spoon 1 used {:#} time(s)\n", s1.count);
+          Builtin.print1("Spoon 2 used {:#} time(s)\n", s2.count);
+          Builtin.print1("Spoon 3 used {:#} time(s)\n", s3.count);
+          Builtin.print1("Spoon 4 used {:#} time(s)\n", s4.count);
+          Builtin.print1("Spoon 5 used {:#} time(s)\n", s5.count);
+        };
+
+      } else {
+        // FIXME: It's possible here that one Philosopher manages to finish
+        // twice before one Philosopher finishes once.
+        if (t.count <= 5) {
+          Table.serve_main(table, p);
+        } else {
+        }
+      }
+    }
+  }
+
+  /*
+   * Ugly
+   */
+  serve_starter(table: cown[Table] & imm, p: Philosopher & iso) {
+    when (table) {
+      if (p.id == 1) {
+        p.left = table.f1;
+        p.right = table.f2;
+      } else { if (p.id == 2) {
+        p.left = table.f2;
+        p.right = table.f3;
+      } else { if (p.id == 3) {
+        p.left = table.f3;
+        p.right = table.f4;
+      } else { if (p.id == 4) {
+        p.left = table.f4;
+        p.right = table.f5;
+      } else /* (p.id == 5) */ {
+        p.left = table.f5;
+        p.right = table.f1;
+      }}}};
+      p.start();
+    }
+  }
+
+  serve_main(table: cown[Table] & imm, p: Philosopher & iso) {
+    when (table) {
+      if (p.id == 1) {
+        p.left = table.s1;
+        p.right = table.s2;
+      } else { if (p.id == 2) {
+        p.left = table.s2;
+        p.right = table.s3;
+      } else { if (p.id == 3) {
+        p.left = table.s3;
+        p.right = table.s4;
+      } else { if (p.id == 4) {
+        p.left = table.s4;
+        p.right = table.s5;
+      } else /* (p.id == 5) */ {
+        p.left = table.s5;
+        p.right = table.s1;
+      }}}};
+      p.start();
+    }
+  }
+
+  sit(table: cown[Table] & imm, p: Philosopher & iso) {
+    Table.serve_starter(table, p);
+  }
+}
+
+class Philosopher
+{
+  id: U64 & imm;
+  hunger: U64 & imm;
+  left: cown[Utensil] & imm;
+  right: cown[Utensil] & imm;
+  table: cown[Table] & imm;
+
+  create(id: U64 & imm, table: cown[Table] & imm): Philosopher & iso {
+    var result = new Philosopher;
+    result.id = id;
+    result.table = table;
+    result
+  }
+
+  _eat(self: iso) {
+    when (var l = self.left, var r = self.right) {
+      Builtin.print1("Philosopher {:#} eats\n", self.id);
+      if (self.hunger) {
+        l.use();
+        r.use();
+        self.hunger = self.hunger - 1;
+        self._eat();
+      } else {
+        Builtin.print1("Philosopher {:#} finishes\n", self.id);
+        Table.finish(self.table, self);
+      }
+    }
+  }
+
+  start(self: iso) {
+    self.hunger = 10;
+    self._eat();
+  }
+
+  sit(self: iso) {
+    Table.sit(self.table, self);
+  }
+}
+
+class Main {
+  main() {
+    var table = Table.create();
+
+    var phil1 = Philosopher.create(1, table);
+    var phil2 = Philosopher.create(2, table);
+    var phil3 = Philosopher.create(3, table);
+    var phil4 = Philosopher.create(4, table);
+    var phil5 = Philosopher.create(5, table);
+
+    phil1.sit();
+    phil2.sit();
+    phil3.sit();
+    phil4.sit();
+    phil5.sit();
+
+  }
+}
