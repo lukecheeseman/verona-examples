@@ -38,13 +38,14 @@ class Table {
   }
 
   /*
-   * When a Philosopher informs the table that they are finished, the table
-   * either serves_main (replacing the Philosophers Utensil from a Fork to
-   * a Spoon) or the Philosopher has finished eating.
+   * When a Philosopher informs the table that they are finished, the table decrements the count
+   * of philosophers still eating. If all have finished eating then print the final result.
    */
   finish(table: cown[Table] & imm, p: Philosopher & iso) {
     when (var t = table) {
-      if (t.count = 0) {
+      t.count = t.count - 1;
+
+      if (t.count == 0) {
         when (var f1 = t.f1, var f2 = t.f2, var f3 = t.f3, var f4 = t.f4, var f5 = t.f5) {
           Builtin.print1("Fork 1 used {:#} time(s)\n", f1.count);
           Builtin.print1("Fork 2 used {:#} time(s)\n", f2.count);
@@ -52,8 +53,6 @@ class Table {
           Builtin.print1("Fork 4 used {:#} time(s)\n", f4.count);
           Builtin.print1("Fork 5 used {:#} time(s)\n", f5.count);
         };
-      } else {
-        t.count = t.count - 1;
       }
     }
   }
@@ -80,7 +79,7 @@ class Philosopher
   _eat(self: iso) {
     when (var l = self.left, var r = self.right) {
       Builtin.print1("Philosopher {:#} eats\n", self.id);
-      if (self.hunger) {
+      if (self.hunger != 0) {
         l.use();
         r.use();
         self.hunger = self.hunger - 1;
@@ -120,6 +119,5 @@ class Main {
     phil3.start();
     phil4.start();
     phil5.start();
-
   }
 }
