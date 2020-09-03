@@ -5,18 +5,18 @@ class Node[T: iso | mut] {
 
 class List[T: iso | mut] {
   _head: (Node[T] & mut) | (None & imm);
-  _size: U64;
+  _size: U64 & imm;
   _none: (None & imm);
 
   init(self: mut) {
-    self._none = freeze (new None);
+    self._none = Builtin.freeze(new None);
     self._head = self._none;
     self._size = 0;
   }
 
   create(): List[T] & iso {
     var result = new List;
-    result._none = freeze (new None);
+    result._none = Builtin.freeze(new None);
     result._head = result._none;
     result._size = 0;
     result
@@ -56,16 +56,16 @@ class List[T: iso | mut] {
     }
   }
 
-  size(self: mut): U64 {
+  size(self: mut): U64 & imm {
     self._size
   }
 }
 
 class Group[T: iso | mut] {
-  _capacity: U64;
+  _capacity: U64 & imm;
   _data: List[T] & mut;
 
-  create(capacity: U64): Group[T] & iso {
+  create(capacity: U64 & imm): Group[T] & iso {
     var result = new Group;
     result._capacity = capacity;
     var data = mut-view(new List in result);
@@ -74,9 +74,9 @@ class Group[T: iso | mut] {
     result
   }
 
-  full(self: mut): U64 {
+  full(self: mut): U64 & imm {
     (self._data).size() >= self._capacity
-    
+
   }
 
   join(self: mut, value: T) {
@@ -87,21 +87,21 @@ class Group[T: iso | mut] {
     (self._data).pop()
   }
 
-  capacity(self: iso): U64 {
+  capacity(self: iso): U64 & imm {
     self._capacity
   }
 }
 
 class Reindeer {
-  _group: cown[Group[Reindeer & iso]];
-  _id: U64;
+  _group: cown[Group[Reindeer & iso]] & imm;
+  _id: U64 & imm;
 
-  create(group: cown[Group[Reindeer & iso]], id: U64): Reindeer & iso {
+  create(group: cown[Group[Reindeer & iso]] & imm, id: U64 & imm): Reindeer & iso {
     var result = new Reindeer;
     result._group = group;
     result._id = id;
     result
-  } 
+  }
 
   ready(self: iso) {
     when (var g = self._group) {
@@ -125,15 +125,15 @@ class Reindeer {
 }
 
 class Elf {
-  _group: cown[Group[Elf & iso]];
-  _id: U64;
+  _group: cown[Group[Elf & iso]] & imm;
+  _id: U64 & imm;
 
-  create(group: cown[Group[Elf & iso]], id: U64): Elf & iso {
+  create(group: cown[Group[Elf & iso]] & imm, id: U64 & imm): Elf & iso {
     var result = new Elf;
     result._group = group;
     result._id = id;
     result
-  } 
+  }
 
   ready(self: iso) {
     when (var g = self._group) {
@@ -172,21 +172,21 @@ class Santa {
 
 class Workshop {
   run() {
-    var reindeer_group = cown(Group.create(9));
+    var reindeer_group = cown.create(Group.create(9));
     var i = 0;
     while i < 9 {
       (Reindeer.create(reindeer_group, i)).ready();
       i = i + 1;
     };
 
-    var elf_group = cown(Group.create(3));
+    var elf_group = cown.create(Group.create(3));
     i = 0;
     while i < 10 {
       (Elf.create(elf_group, i)).ready();
       i = i + 1;
     };
 
-    var santa = cown(Santa.create());
+    var santa = cown.create(Santa.create());
 
     Workshop._deliver_toys(santa, reindeer_group);
     Workshop._meet_in_study(santa, elf_group);
@@ -196,7 +196,7 @@ class Workshop {
     match v  {
       var n: None => None,
       var r: Reindeer => {
-        r = r.deliver_toys(); 
+        r = r.deliver_toys();
         when() {
           (r.graze()).ready();
         }
@@ -212,7 +212,7 @@ class Workshop {
     };
   }
 
-  _deliver_toys(santa: cown[Santa], reindeer_group: cown[Group[Reindeer & iso]]) {
+  _deliver_toys(santa: cown[Santa] & imm, reindeer_group: cown[Group[Reindeer & iso]] & imm) {
     when(var s = santa, var g = reindeer_group) {
       if (g.full()) {
         s = s.deliver_toys();
@@ -230,7 +230,7 @@ class Workshop {
     match v  {
       var n: None => None,
       var e: Elf => {
-        e = e.meet_in_study(); 
+        e = e.meet_in_study();
         when() {
           (e.holiday()).ready();
         }
@@ -246,7 +246,7 @@ class Workshop {
     };
   }
 
-  _meet_in_study(santa: cown[Santa], elf_group: cown[Group[Elf & iso]]) {
+  _meet_in_study(santa: cown[Santa] & imm, elf_group: cown[Group[Elf & iso]] & imm) {
     when(var s = santa, var g = elf_group) {
       if (g.full()) {
         s.meet_in_study();
