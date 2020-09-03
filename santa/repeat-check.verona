@@ -1,90 +1,27 @@
-class Node[T: iso | mut] {
-  value: T | (None & imm);
-  next: (Node[T] & mut) | (None & imm);
-}
+use "../list.verona"
 
-class List[T: iso | mut] {
-  _head: (Node[T] & mut) | (None & imm);
-  _size: U64 & imm;
-  _none: (None & imm);
-
-  init(self: mut) {
-    self._none = Builtin.freeze(new None);
-    self._head = self._none;
-    self._size = 0;
-  }
-
-  create(): List[T] & iso {
-    var result = new List;
-    result._none = Builtin.freeze(new None);
-    result._head = result._none;
-    result._size = 0;
-    result
-  }
-
-  push(self: mut, value: T) {
-    self._head = self._push(self._head = self._none, value);
-    self._size = self._size + 1;
-  }
-
-  _push(self: mut,
-          current: (Node[T] & mut) | (None & imm),
-          value: T): (Node[T] & mut) {
-    match current
-    {
-      var e: None => {
-        var node = new Node in self;
-        node.value = value;
-        node.next = self._none;
-        node
-      },
-      var n: Node[T] => {
-        n.next = self._push(n.next = self._none, value);
-        n
-      }
-    }
-  }
-
-  pop(self: mut): T | (None & imm) {
-    match (self._head = self._none) {
-      var e: None => e,
-      var n: Node[T] => {
-        self._head = (n.next = self._none);
-        self._size = self._size - 1;
-        n.value = self._none
-      }
-    }
-  }
-
-  size(self: mut): U64 & imm {
-    self._size
-  }
-}
-
-class Group[T: iso | mut] {
+class Group[T] {
   _capacity: U64 & imm;
-  _data: List[T] & mut;
+  _data: Queue[T] & iso;
 
   create(capacity: U64 & imm): Group[T] & iso {
     var result = new Group;
     result._capacity = capacity;
-    var data = mut-view(new List in result);
-    data.init();
-    result._data = data;
+    result._data = Queue.create(0);;
     result
   }
 
   full(self: mut): U64 & imm {
-    (self._data).size() >= self._capacity
+    (self._data).length >= self._capacity
 
   }
 
-  join(self: mut, value: T) {
-    (self._data).push(value);
+  join(self: mut, value: T & iso) {
+    (mut-view (self._data)).add(value);
   }
 
-  pop(self: mut): T | (None & imm) {
-    (self._data).pop()
+  pop(self: mut): (T & iso) | (None & imm) {
+    (mut-view (self._data)).remove()
   }
 
   capacity(self: iso): U64 & imm {
@@ -93,10 +30,10 @@ class Group[T: iso | mut] {
 }
 
 class Reindeer {
-  _group: cown[Group[Reindeer & iso]] & imm;
+  _group: cown[Group[Reindeer]] & imm;
   _id: U64 & imm;
 
-  create(group: cown[Group[Reindeer & iso]] & imm, id: U64 & imm): Reindeer & iso {
+  create(group: cown[Group[Reindeer]] & imm, id: U64 & imm): Reindeer & iso {
     var result = new Reindeer;
     result._group = group;
     result._id = id;
@@ -125,10 +62,10 @@ class Reindeer {
 }
 
 class Elf {
-  _group: cown[Group[Elf & iso]] & imm;
+  _group: cown[Group[Elf]] & imm;
   _id: U64 & imm;
 
-  create(group: cown[Group[Elf & iso]] & imm, id: U64 & imm): Elf & iso {
+  create(group: cown[Group[Elf]] & imm, id: U64 & imm): Elf & iso {
     var result = new Elf;
     result._group = group;
     result._id = id;
@@ -204,7 +141,7 @@ class Workshop {
     };
   }
 
-  _reindeer_dispatch(g: Group[Reindeer & iso] & mut) {
+  _reindeer_dispatch(g: Group[Reindeer] & mut) {
     var i = 0;
     while (i < 9) {
       Workshop._reindeer_deliver(g.pop());
@@ -212,7 +149,7 @@ class Workshop {
     };
   }
 
-  _deliver_toys(santa: cown[Santa] & imm, reindeer_group: cown[Group[Reindeer & iso]] & imm) {
+  _deliver_toys(santa: cown[Santa] & imm, reindeer_group: cown[Group[Reindeer]] & imm) {
     when(var s = santa, var g = reindeer_group) {
       if (g.full()) {
         s = s.deliver_toys();
@@ -236,7 +173,7 @@ class Workshop {
     };
   }
 
-  _elf_dispatch(g: Group[Elf & iso] & mut) {
+  _elf_dispatch(g: Group[Elf] & mut) {
     var i = 0;
     while (i < 3) {
       Workshop._elf_meet(g.pop());
@@ -244,7 +181,7 @@ class Workshop {
     };
   }
 
-  _meet_in_study(santa: cown[Santa] & imm, elf_group: cown[Group[Elf & iso]] & imm) {
+  _meet_in_study(santa: cown[Santa] & imm, elf_group: cown[Group[Elf]] & imm) {
     when(var s = santa, var g = elf_group) {
       if (g.full()) {
         s.meet_in_study();
