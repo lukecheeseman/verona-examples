@@ -145,20 +145,13 @@ class Workshop {
     // becomes available and the 9 reindeer go on holiday and become
     // available again once they return from holiday.
     when(var s = santa, var group = Pool.request(reindeer, 9)) {
+      Workshop.deliver_toys(santa, reindeer);
       Builtin.print("------------------------------------\n");
       s.deliver_toys();
       var helpers = group.extract();
       Workshop._helpers_act(mut-view helpers);
       Workshop._helpers_sleep(helpers);
     };
-
-    // Put this in a when block as we don't want to call this synchronously,
-    // if we did then it would inifitely call itself and never release a
-    // thread, but we also don't need to wait for the previous behaviour
-    // to finish before scheduling the same behaviour again.
-    when() {
-      Workshop.deliver_toys(santa, reindeer);
-    }
   }
 
   /*
@@ -166,16 +159,13 @@ class Workshop {
    */
   meet_in_study(santa: cown[Santa] & imm, elves: cown[Pool[Elf]] & imm) {
     when(var s = santa, var group = Pool.request(elves, 3)) {
+      Workshop.meet_in_study(santa, elves);
       Builtin.print("------------------------------------\n");
       s.meet_in_study();
       var helpers = group.extract();
       Workshop._helpers_act(mut-view helpers);
       Workshop._helpers_sleep(helpers);
     };
-
-    when() {
-      Workshop.meet_in_study(santa, elves);
-    }
   }
 
   create() {
