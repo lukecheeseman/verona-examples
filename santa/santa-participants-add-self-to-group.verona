@@ -1,78 +1,13 @@
-class Node[T: iso | mut] {
-  value: T | (None & imm);
-  next: (Node[T] & mut) | (None & imm);
-}
-
-class List[T: iso | mut] {
-  _head: (Node[T] & mut) | (None & imm);
-  _size: U64;
-  _none: (None & imm);
-
-  _init(self: mut) {
-    self._none = freeze (new None);
-    self._head = self._none;
-    self._size = 0;
-  }
-
-  create(): List[T] & iso {
-    var result = new List;
-    (mut-view result)._init();
-    result
-  }
-
-  create_in(parent: mut): List[T] & mut {
-    var result = new List in parent;
-    result._init();
-    result
-  }
-
-  push(self: mut, value: T) {
-    self._head = self._push(self._head = self._none, value);
-    self._size = self._size + 1;
-  }
-
-  _push(self: mut,
-          current: (Node[T] & mut) | (None & imm),
-          value: T): (Node[T] & mut) {
-    match current
-    {
-      var e: None => {
-        var node = new Node in self;
-        node.value = value;
-        node.next = self._none;
-        node
-      },
-      var n: Node[T] => {
-        n.next = self._push(n.next = self._none, value);
-        n
-      }
-    }
-  }
-
-  pop(self: mut): T | (None & imm) {
-    match (self._head = self._none) {
-      var e: None => e,
-      var n: Node[T] => {
-        self._head = (n.next = self._none);
-        self._size = self._size - 1;
-        n.value = self._none
-      }
-    }
-  }
-
-  size(self: mut): U64 {
-    self._size
-  }
-}
+use "../list.verona"
 
 interface Task[T] {
   promise(self: mut): Promise[T] & iso;
 }
 
 class DeliverToys {
-  _santa: cown[Santa];
+  _santa: cown[Santa] & imm;
 
-  create(santa: cown[Santa]): DeliverToys & iso {
+  create(santa: cown[Santa] & imm): DeliverToys & iso {
     var result = new DeliverToys;
     result._santa = santa;
     result
@@ -88,15 +23,15 @@ class DeliverToys {
     };
   }
 
-  promise(self: mut): Promise[List[Reindeer & iso] & iso] & iso {
+  promise(self: mut): Promise[Queue[Reindeer]] & iso {
     var p = Promise.create();
     var g = (mut-view p).wait_handle();
     when (g, var s = self._santa) {
       s.deliver_toys();
       // This is kind of odd as each reindeer delivers a toy and then goes
       // on holiday. Should probably be, all deliver and then all go on holiday.
-      while g.size() > 0 {
-        DeliverToys._reindeer_deliver(g.pop());
+      while g.length > 0 {
+        DeliverToys._reindeer_deliver(g.remove());
       };
       Builtin.print("=============================\n");
     };
@@ -105,9 +40,9 @@ class DeliverToys {
 }
 
 class MeetInStudy {
-  _santa: cown[Santa];
+  _santa: cown[Santa] & imm;
 
-  create(santa: cown[Santa]): MeetInStudy & iso {
+  create(santa: cown[Santa] & imm): MeetInStudy & iso {
     var result = new MeetInStudy;
     result._santa = santa;
     result
@@ -123,13 +58,13 @@ class MeetInStudy {
     };
   }
 
-  promise(self: mut): Promise[List[Elf & iso] & iso] & iso {
+  promise(self: mut): Promise[Queue[Elf]] & iso {
     var p = Promise.create();
     var g = (mut-view p).wait_handle();
     when (g, var s = self._santa) {
       s.meet_in_study();
-      while g.size() > 0 {
-        MeetInStudy._elf_meet(g.pop());
+      while g.length > 0 {
+        MeetInStudy._elf_meet(g.remove());
       };
       Builtin.print("=============================\n");
     };
@@ -137,49 +72,43 @@ class MeetInStudy {
   }
 }
 
-class Group[T: mut | iso] {
-  _capacity: U64;
-  _promise: Promise[List[T] & iso] & iso;
-  _task: Task[List[T] & iso] & iso;
-  _data: List[T] & iso;
+class Group[T] {
+  _capacity: U64 & imm;
+  _promise: Promise[Queue[T]] & iso;
+  _task: Task[Queue[T]] & iso;
+  _data: Queue[T] & iso;
 
-  create(capacity: U64, task: Task[List[T] & iso] & iso): Group[T] & iso {
+  create(capacity: U64 & imm, task: Task[Queue[T]] & iso): Group[T] & iso {
     var result = new Group;
     result._capacity = capacity;
     result._promise = (mut-view task).promise();
     result._task = task;
-    result._data = List.create();
+    result._data = Queue.create(0);
     result
   }
 
-  full(self: mut): U64 {
-    (mut-view (self._data)).size() >= self._capacity
+  full(self: mut): U64 & imm {
+    (mut-view (self._data)).length >= self._capacity
   }
 
-  add(self: mut, value: T) {
-    (mut-view (self._data)).push(value);
+  add(self: mut, value: T & iso) {
+    (mut-view (self._data)).add(value);
     if self.full() {
-      var t = mut-view (self._task);
-      var p = (self._promise = t.promise());
-      p.fulfill(self._data = List.create())
-    } else {
+      var old = (self._promise = (mut-view (self._task)).promise());
+      old.fulfill(self._data = Queue.create(0))
     }
   }
 
-  remove(self: mut): T | (None & imm) {
-    (mut-view (self._data)).pop()
-  }
-
-  capacity(self: iso): U64 {
-    self._capacity
+  remove(self: mut): (T & iso) | (None & imm) {
+    (mut-view (self._data)).remove()
   }
 }
 
 class Reindeer {
-  _group: cown[Group[Reindeer & iso]];
-  _id: U64;
+  _group: cown[Group[Reindeer]] & imm;
+  _id: U64 & imm;
 
-  create(group: cown[Group[Reindeer & iso]], id: U64) {
+  create(group: cown[Group[Reindeer]] & imm, id: U64 & imm) {
     var result = new Reindeer;
     result._group = group;
     result._id = id;
@@ -210,10 +139,10 @@ class Reindeer {
 }
 
 class Elf {
-  _group: cown[Group[Elf & iso]];
-  _id: U64;
+  _group: cown[Group[Elf]] & imm;
+  _id: U64 & imm;
 
-  create(group: cown[Group[Elf & iso]], id: U64) {
+  create(group: cown[Group[Elf]] & imm, id: U64 & imm) {
     var result = new Elf;
     result._group = group;
     result._id = id;
@@ -259,10 +188,10 @@ class Santa {
 
 class Workshop {
   run() {
-    var santa = cown(Santa.create());
+    var santa = cown.create(Santa.create());
 
     var rt = DeliverToys.create(santa);
-    var rg = cown(Group.create(9, rt));
+    var rg = cown.create(Group.create(9, rt));
 
     var i = 0;
     while i < 9 {
@@ -271,7 +200,7 @@ class Workshop {
     };
 
     var et = MeetInStudy.create(santa);
-    var eg = cown(Group.create(3, et));
+    var eg = cown.create(Group.create(3, et));
     i = 0;
     while i < 10 {
       Elf.create(eg, i);
