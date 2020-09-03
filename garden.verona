@@ -1,5 +1,12 @@
+/* Shared counter
+ *
+ * A counter shared between two turnstiles
+ * - shows that all increments are atomic and not increment is lost
+ *
+ */
+
 class Counter {
-  _count: U64;
+  _count: U64 & imm;
 
   create(): Counter & iso {
     var result = new Counter;
@@ -19,9 +26,9 @@ class Counter {
 }
 
 class Turnstile {
-  _people: cown[Counter];
+  _people: cown[Counter] & imm;
 
-  create(people: cown[Counter]): Turnstile & iso {
+  create(people: cown[Counter] & imm): Turnstile & iso {
     var result = new Turnstile;
     result._people = people;
     result
@@ -40,7 +47,7 @@ class Turnstile {
 
 class Garden {
   go() {
-    var counter = cown(Counter.create());
+    var counter = cown.create(Counter.create());
     var east = Turnstile.create(counter);
     var west = Turnstile.create(counter);
 
