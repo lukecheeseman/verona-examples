@@ -1,3 +1,9 @@
+/* Solution to the dining philosophers problem
+ *   -
+ *
+ *
+ */
+
 class Fork {
   count: U64 & imm;
 
