@@ -1,3 +1,8 @@
+/* Alternative pattern to using a promise
+ * - create a cown with some state that changes from None to a desired value
+ * - repeatedly query the state of the cown to see if it has change from None
+ */
+
 class Cell {
   data: (None & imm) | (U64Obj & iso);
 
