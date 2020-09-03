@@ -1,4 +1,5 @@
-/*
+/* An example discussing behaviour ordering and nested behaviours
+ *
  * < - causal
  * << - dispatch
  *
