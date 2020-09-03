@@ -218,8 +218,6 @@ class Workshop {
         s = s.deliver_toys();
         Workshop._reindeer_dispatch(g);
         Builtin.print("========================\n");
-      } else {
-
       };
       Workshop._deliver_toys(santa, reindeer_group);
     };
@@ -252,8 +250,6 @@ class Workshop {
         s.meet_in_study();
         Workshop._elf_dispatch(g);
         Builtin.print("========================\n");
-      } else {
-
       };
       Workshop._meet_in_study(santa, elf_group);
     };
