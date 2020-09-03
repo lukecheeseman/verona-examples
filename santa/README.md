@@ -22,10 +22,16 @@ We provide the following solutions:
 
 ## groups-and-status-checks.verona
 
-A soultion with a cown of santa and cowns of groups of workers. Workers add themselves to groups when they are ready, behaviours repeatedly request access santa and to the groups to check if enough workers are present. If enough workers are present then the tasks are performed, otherwise a behaviour making the same check is created.
+A solution with a cown of santa and cowns of groups of workers. Workers add themselves to groups when they are ready, behaviours repeatedly request access santa and to the groups to check if enough workers are present. If enough workers are present then the tasks are performed, otherwise a behaviour making the same check is created.
 
 ## groups-and-tasks.verona
 
+Workers are colelcted into groups. A task creates a promise and hands the it to a group of workers, a behaviour waits for the promise to be fulfilled with the desired number of workers. When the number of workers are available in the group, the tasks promise is fulfilled and a new promise created in its place.
+
 ## groups-and-pools.verona
 
+Workers belong to pools and behaviours request a number of those workers. When a pool has enough workers, the pool fulfills a request and provides the required number. Once finished, the workers are automatically returned to their origin pool.
+
 ## groups-and-barrriers.verona
+
+Workers and Santa are represented by processes. Signals, Groups and Barriers are used to communicate when processes are at specific points of execution. When enough workers reach a synchronisation point then a number of them are let through to do some colloborative task.
