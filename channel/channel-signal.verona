@@ -1,43 +1,23 @@
 use "../list.verona"
+use "../barrier/signal.verona"
 
-/* Channel built using a condition variable or signal:
+/* Channel built using a signal variable or signal:
  *
- * A condition object is wrapper on top of a promise, behaviours can be
+ * A signal object is wrapper on top of a promise, behaviours can be
  * triggered when a codition has been met by when'ing on the cown returned
- * by await. When the the condition vairable is signalled, the current
+ * by await. When the the signal vairable is signalled, the current
  * promise is fulfilled and replaced with a new promise. Any behaviours that
- * we waiting for the condition previouslt can now run.
+ * we waiting for the signal previouslt can now run.
  *
- * A channel is built on top of this by having a channel use a condition
+ * A channel is built on top of this by having a channel use a signal
  * variable that any unfulfilled read waits on, when wite happens (changing
  * the state of the channel) all waiting reads are signalled and all try to
  * read values. Any reads that did not succesfully read a value, wait again
- * on the condition variable.
+ * on the signal variable.
  *
  * This example then uses a single producer and consumer to write and read
  * values into and out of the channel
  */
-
-class Condition {
-  /* Used to signal/wake up and behaviours that are waiting for this condition
-   * to be satisfied
-   */
-  _promise: Promise[None] & iso;
-
-  create(): Condition & iso {
-    var result = new Condition;
-    result._promise = Promise.create();
-    result
-  }
-
-  await(self: mut): cown[None] & imm {
-    (mut-view (self._promise)).wait_handle()
-  }
-
-  signal(self: mut) {
-    (self._promise = Promise.create()).fulfill(new None);
-  }
-}
 
 /* Cell object so that values can be sent around in promises and extracted
  * later without losing iso access to them */
@@ -57,12 +37,12 @@ class Cell[T] {
 
 class Channel[T] {
   _queue: Queue[Cell[T]] & iso;
-  _condition: Condition & iso;
+  _signal: Signal & iso;
 
   create(): cown[Channel[T]] & imm {
     var result = new Channel;
     result._queue = Queue.create(0);
-    result._condition = Condition.create();
+    result._signal = Signal.create();
     cown.create(result)
   }
 
@@ -71,7 +51,7 @@ class Channel[T] {
   write(channel: cown[Channel[T]] & imm, value: T & iso) {
     when (var c = channel) {
       (mut-view (c._queue)).add(Cell.create(value));
-      (mut-view (c._condition)).signal();
+      (mut-view (c._signal)).signal();
     }
   }
 
@@ -89,7 +69,7 @@ class Channel[T] {
          * at once but there were not enough values to satisfy all of them, then
          * another read is scheduled for when the channels state changes. */
         var _: None => {
-          when (var r = (mut-view (c._condition)).await()) {
+          when (var r = (mut-view (c._signal)).await()) {
             Channel._read(channel, p);
           };
         }
