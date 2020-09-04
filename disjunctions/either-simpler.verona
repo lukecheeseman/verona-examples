@@ -1,0 +1,152 @@
+/* return the first fulfilled promise.
+ * creates patterns of Eithers to create behaviours that wait for the return promise and their result.
+ * There are no ordering constrains on Either behaviours so any can return first.
+ */
+
+class Cell[T] {
+  data: (T & iso) | (None & imm);
+
+  create(data: (T & iso) | (None & imm)): Cell[T] & iso {
+    var result = new Cell;
+    result.data = data;
+    result
+  }
+
+  extract(self: mut): (T & iso) | (None & imm) {
+    self.data = Builtin.freeze(new None)
+  }
+}
+
+class Either[A] {
+  _handle: cown[Cell[A]] & imm;
+
+  of(fut: cown[Cell[A]] & imm): Either[A] & iso {
+    var result = new Either;
+    result._handle = fut;
+    result
+  }
+
+  or[B](self: iso, fut: cown[Cell[B]] & imm): Either2[A, B] & iso {
+    Either2.create(self, fut)
+  }
+
+  _ready[B](self: iso, retp: cown[Cell[Promise[Cell[A | B]]]] & imm) {
+    when(var c = self._handle, retp) {
+      match (retp.extract()) {
+        var _: None => {}
+        var p: Promise[Cell[A | B]] => p.fulfill(Cell.create(c.extract())),
+      }
+    }
+  }
+
+  ready(self: iso): cown[Cell[A]] & imm {
+    self._handle
+  }
+}
+
+class Either2[A, B] {
+  _prev: Either[A] & iso;
+  _handle: cown[Cell[B]] & imm;
+
+  create(prev: Either[A] & iso, fut: cown[Cell[B]] & imm): Either2[A, B] & iso {
+    var result = new Either2;
+    result._prev = prev;
+    result._handle = fut;
+    result
+  }
+
+  or[C](self: iso, fut: cown[Cell[C]] & imm): Either3[A, B, C] & iso {
+    Either3.create(self, fut)
+  }
+
+  _ready[C](self: iso, retp: cown[Cell[Promise[Cell[A | B | C]]]] & imm) {
+    (self._prev)._ready(retp);
+    when(var c = self._handle, retp) {
+      match (retp.extract()) {
+        var _: None => {}
+        var p: Promise[Cell[A | B | C]] => p.fulfill(Cell.create(c.extract())),
+      }
+    }
+  }
+
+  ready(self: iso): cown[Cell[A | B]] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+
+    var retp = cown.create(Cell.create(p));
+    self._ready(retp);
+
+    f
+  }
+}
+
+class Either3[A, B, C] {
+  _prev: Either2[A, B] & iso;
+  _handle: cown[Cell[C]] & imm;
+
+  create(prev: Either2[A, B] & iso, fut: cown[Cell[C]] & imm): Either3[A, B, C] & iso {
+    var result = new Either3;
+    result._prev = prev;
+    result._handle = fut;
+    result
+  }
+
+  ready(self: iso): cown[Cell[A | B]] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+
+    var retp = cown.create(Cell.create(p));
+
+    (self._prev)._ready(retp);
+    when(var c = self._handle, retp) {
+      match (retp.extract()) {
+        var _: None => {}
+        var p: Promise[Cell[A | B | C]] => p.fulfill(Cell.create(c.extract())),
+      }
+    };
+
+    f
+  }
+}
+
+class Delay[T] {
+  produce(delay: U64 & imm, value: T & iso): cown[Cell[T]] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    when() {
+      var i = 0;
+      while i < delay {
+        i = i + 1;
+      };
+      p.fulfill(Cell.create(value));
+    };
+    f
+  }
+}
+
+class StringObj {
+  _string: String;
+
+  create(string: String): StringObj & iso {
+    var result = new StringObj;
+    result._string = string;
+    result
+  }
+}
+
+class Main {
+  main() {
+    var f1 = Delay.produce(10, U64Obj.create(42));
+    var f2 = Delay.produce(0, StringObj.create("Hello World"));
+    var f3 = Delay.produce(12, U64Obj.create(14));
+
+    when(var result = ((((Either.of(f1)).or(f2))).or(f3)).ready()) {
+      Builtin.print("got: ");
+      match (result.extract()) {
+        var o: U64Obj => Builtin.print1("{:#}\n", o),
+        var s: StringObj => Builtin.print1("{:#}\n", s),
+        var _: None => Builtin.print("None\n"),
+      }
+    };
+  }
+}
