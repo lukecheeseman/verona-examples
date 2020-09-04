@@ -72,10 +72,7 @@ class Either2[A, B] {
   ready(self: iso): cown[Cell[A | B]] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
-
-    var retp = cown.create(Cell.create(p));
-    self._ready(retp);
-
+    self._ready(cown.create(Cell.create(p)));
     f
   }
 }
@@ -91,20 +88,20 @@ class Either3[A, B, C] {
     result
   }
 
-  ready(self: iso): cown[Cell[A | B]] & imm {
-    var p = Promise.create();
-    var f = (mut-view p).wait_handle();
-
-    var retp = cown.create(Cell.create(p));
-
+  _ready[D](self: iso, retp: cown[Cell[Promise[Cell[A | B | C | D]]]] & imm) {
     (self._prev)._ready(retp);
     when(var c = self._handle, retp) {
       match (retp.extract()) {
         var _: None => {}
-        var p: Promise[Cell[A | B | C]] => p.fulfill(Cell.create(c.extract())),
+        var p: Promise[Cell[A | B | C | D]] => p.fulfill(Cell.create(c.extract())),
       }
-    };
+    }
+  }
 
+  ready(self: iso): cown[Cell[A | B | C]] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
+    self._ready(cown.create(Cell.create(p)));
     f
   }
 }
