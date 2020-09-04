@@ -137,6 +137,7 @@ class Main {
     var f2 = Delay.produce(0, StringObj.create("Hello World"));
     var f3 = Delay.produce(12, U64Obj.create(14));
 
+    /* get the first result and discard the rest */
     when(var result = ((((Either.of(f1)).or(f2))).or(f3)).ready()) {
       Builtin.print("got: ");
       match (result.extract()) {
