@@ -1,83 +1,24 @@
-class Node[T: iso | mut] {
-  value: T | (None & imm);
-  next: (Node[T] & mut) | (None & imm);
-}
-
-class List[T: iso | mut] {
-  _head: (Node[T] & mut) | (None & imm);
-  _size: U64;
-  _none: (None & imm);
-
-  _init(self: mut) {
-    self._none = freeze (new None);
-    self._head = self._none;
-    self._size = 0;
-  }
-
-  create(): List[T] & iso {
-    var result = new List;
-    (mut-view result)._init();
-    result
-  }
-
-  push(self: mut, value: T) {
-    self._head = self._push(self._head = self._none, value);
-    self._size = self._size + 1;
-  }
-
-  _push(self: mut,
-          current: (Node[T] & mut) | (None & imm),
-          value: T): (Node[T] & mut) {
-    match current
-    {
-      var e: None => {
-        var node = new Node in self;
-        node.value = value;
-        node.next = self._none;
-        node
-      },
-      var n: Node[T] => {
-        n.next = self._push(n.next = self._none, value);
-        n
-      }
-    }
-  }
-
-  pop(self: mut): T | (None & imm) {
-    match (self._head = self._none) {
-      var e: None => e,
-      var n: Node[T] => {
-        self._head = (n.next = self._none);
-        self._size = self._size - 1;
-        n.value = self._none
-      }
-    }
-  }
-
-  size(self: mut): U64 {
-    self._size
-  }
-}
+use "../list.verona"
 
 class Channel[T] {
-  _messages: (List[Reader[T] & iso] & iso) | (List[Writer[T] & iso] & iso);
+  _messages: (Queue[Reader[T]] & iso) | (Queue[Writer[T]] & iso);
 
   create(): Channel[T] & iso {
     var result = new Channel;
-    result._messages = List.create();
+    result._messages = Queue.create(0);
     result
   }
 
-  write(self: mut, value: T) {
+  write(self: mut, value: T & iso) {
     match (self._messages) {
-      var ws: List[Writer[T] & iso] => {
-        (mut-view ws).push(Writer.create(value));
+      var ws: Queue[Writer[T]] => {
+        (mut-view ws).add(Writer.create(value));
       }
-      var rs: List[Reader[T] & iso] => {
-        match((mut-view rs).pop()) {
+      var rs: Queue[Reader[T]] => {
+        match((mut-view rs).remove()) {
           var _: None => {
-            var ws = List.create();
-            (mut-view ws).push(Writer.create(value));
+            var ws = Queue.create(0);
+            (mut-view ws).add(Writer.create(value));
             self._messages = ws;
           }
           var r: Reader[T] => r.write(value),
@@ -86,47 +27,51 @@ class Channel[T] {
     };
   }
 
-  read(self: mut): cown[Box[T]] {
+  read(self: mut): cown[Cell[T]] & imm {
     match (self._messages) {
-      var ws: List[Writer[T] & iso] => {
-        match((mut-view ws).pop()) {
+      var ws: Queue[Writer[T]] => {
+        match((mut-view ws).remove()) {
           var _: None => {
-            var rs = List.create();
+            var rs = Queue.create(0);
             var r = Reader.create();
             var handle = (mut-view r).await();
-            (mut-view rs).push(r);
+            (mut-view rs).add(r);
             self._messages = rs;
             handle
           }
-          var w: Writer[T] => cown(w.read()),
+          var w: Writer[T] => cown.create(w.read()),
         }
       }
-      var rs: List[Reader[T] & iso] => {
+      var rs: Queue[Reader[T]] => {
         var r = Reader.create();
         var handle = (mut-view r).await();
-        (mut-view rs).push(r);
+        (mut-view rs).add(r);
         handle
       }
     }
   }
 }
 
-class Box[T] {
-  data: T;
+class Cell[T] {
+  _data: (T & iso) | (None & imm);
 
-  create(data: T): Box[T] & iso {
-    var result = new Box;
-    result.data = data;
+  create(data: T & iso): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
     result
   }
 
-  read(self: iso): T {
-    self.data
+  read(self: mut): (T & iso) | (None & imm) where return in self {
+    self._data
+  }
+
+  extract(self: iso): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
   }
 }
 
 class Reader[T] {
-  _promise: Promise[Box[T] & iso] & iso;
+  _promise: Promise[Cell[T]] & iso;
 
   create(): Reader[T] & iso {
     var result = new Reader;
@@ -134,33 +79,35 @@ class Reader[T] {
     result
   }
 
-  await(self: mut): cown[Box[T] & iso] {
+  await(self: mut): cown[Cell[T]] & imm {
     (mut-view (self._promise)).wait_handle()
   }
 
-  write(self: iso, value: T) {
-    (self._promise).fulfill(Box.create(value));
+  write(self: iso, value: T & iso) {
+    (self._promise).fulfill(Cell.create(value));
   }
 }
 
 class Writer[T] {
-  _data: T;
+  _data: (Cell[T] & iso) | (None & imm);
 
-  create(data: T): Writer[T] & iso {
+  create(data: T & iso): Writer[T] & iso {
     var result = new Writer;
-    result._data = data;
+    result._data = Cell.create(data);
     result
   }
 
-  read(self: iso): Box[T] & iso {
-    Box.create(self._data)
+  read(self: iso): Cell[T] & iso {
+    match (self._data = Builtin.freeze(new None)) {
+      var c: Cell[T] => c,
+    }
   }
 }
 
 class Producer[T: iso] {
-  _channel: cown[Channel[T]];
+  _channel: cown[Channel[T]] & imm;
 
-  create(channel: cown[Channel[T]]): Producer[T] & iso {
+  create(channel: cown[Channel[T]] & imm): Producer[T] & iso {
     var result = new Producer;
     result._channel = channel;
     result
@@ -174,9 +121,9 @@ class Producer[T: iso] {
 }
 
 class Consumer[T: iso] {
-  _channel: cown[Channel[T]];
+  _channel: cown[Channel[T]] & imm;
 
-  create(channel: cown[Channel[T]]): Consumer[T] & iso {
+  create(channel: cown[Channel[T]] & imm): Consumer[T] & iso {
     var result = new Consumer;
     result._channel = channel;
     result
@@ -184,8 +131,8 @@ class Consumer[T: iso] {
 
   consume(self: mut) {
     when (var channel = self._channel) {
-      when(var box = channel.read()) {
-        Builtin.print1("Recieved: {:#}\n", box.data);
+      when(var cell = channel.read()) {
+        Builtin.print1("Recieved: {:#}\n", (mut-view cell).read());
       }
     }
   }
@@ -193,7 +140,7 @@ class Consumer[T: iso] {
 
 class Main {
   main() {
-    var channel = cown(Channel.create());
+    var channel = cown.create(Channel.create());
 
     when() {
       var c = Consumer.create(channel);
