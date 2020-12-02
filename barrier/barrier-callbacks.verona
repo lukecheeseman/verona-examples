@@ -1,0 +1,176 @@
+/* Barrier with callbacks
+ *
+ * A barrier object has a count of how many waiters it expects. Each call to wait takes a callback that is queued.
+ * Once enough calls to wait have occured, the queue of waiting callbacks is emptied and the callbacks called.
+ * The barried is also reset and can then be reused.
+ */
+
+use "../list.verona"
+
+/*
+ * General function interface, note that the receiver is a mut.
+ * This is so we can call apply inside of a call back node.
+ * We can't extract the Callback once it's inside an object as we
+ * can disambiguate it from a None.
+ */
+interface Callback {
+  apply(self: mut);
+}
+
+/*
+ * Require a CallbackNode soe that we can disambiguate between a None
+ * and a Callback in Queue. Simply wraps a Callback object.
+ */
+class CallbackNode {
+  _callback: Callback & iso;
+
+  create(callback: Callback & iso): CallbackNode & iso {
+    var result = new CallbackNode;
+    result._callback = callback;
+    result
+  }
+
+  // call the callback apply
+  apply(self: iso) {
+    (mut-view (self._callback)).apply();
+  }
+}
+
+/*
+ * A Barrier knows the number of calls to wait that must still happen,
+ * the initial expected numbers of calls to wait and the callbacks that
+ * will be called once enough calls to wait have occured.
+ */
+class Barrier {
+  _count: U64 & imm;
+  _reset: U64 & imm;
+  _waiters: Queue[CallbackNode] & iso;
+
+  create(count: U64 & imm): cown[Barrier] & imm {
+    var result = new Barrier;
+    result._count = count;
+    result._reset = count;
+    result._waiters = Queue.create(0);
+    cown.create(result)
+  }
+
+  /*
+   * Pop all waiters off of the queue and call their apply methods.
+   * Apply methods are called asynchronously.
+   */
+  _run_queue(self: mut) {
+    match (mut-view (self._waiters)).remove() {
+      var _: None => {} // all waiters have started running
+      var c: CallbackNode => {
+        when() { c.apply(); };
+        self._run_queue();
+      }
+    }
+  }
+
+  /* 
+   * Queue the callback and decrement the count.
+   * If enough calls to wait have occured, dispatch all the waiters.
+   */
+  wait(barrier: cown[Barrier] & imm, callback: Callback & iso) {
+    when (barrier) {
+      (mut-view (barrier._waiters)).add(CallbackNode.create(callback));
+      barrier._count = barrier._count - 1;
+      if (barrier._count == 0) {
+        barrier._run_queue();
+        barrier._count = barrier._reset;
+      }
+    }
+  }
+}
+
+/*
+ * The code to be run once all participants synchronise for the last time.
+ */
+class Post {
+  _particicpant: (Participant & iso) | (None & imm);
+
+  create(participant: Participant & iso): Post & iso {
+    var result = new Post;
+    result._particicpant = participant;
+    result
+  }
+
+  apply(self: mut) {
+    match (self._particicpant = None.create()) {
+      var p: Participant => {
+        Builtin.print1("Post: {:#}\n", p._id);
+      }
+    }
+  }
+}
+
+/*
+ * The code to be run once all participants synchoneise for the first time.
+ * The participant object gets passed along the chain of callbacks.
+ */
+class Mid {
+  _particicpant: (Participant & iso) | (None & imm);
+
+  create(participant: Participant & iso): Mid & iso {
+    var result = new Mid;
+    result._particicpant = participant;
+    result
+  }
+
+  apply(self: mut) {
+    match (self._particicpant = None.create()) {
+      var p: Participant => {
+        Builtin.print1("Mid: {:#}\n", p._id);
+        
+        Builtin.print1("----- Barrier reached {} ------\n", p._id);
+        Barrier.wait(p._barrier, Post.create(p));
+      }
+    }
+  }
+}
+
+/*
+ * Create a participant and run some code before synchronising at a barrier with
+ * other participants.
+ */
+class Participant {
+  _id: U64 & imm;
+  _barrier: cown[Barrier] & imm;
+
+  create(id: U64 & imm, barrier: cown[Barrier] & imm): Participant & iso {
+    var result = new Participant;
+    result._id = id;
+    result._barrier = barrier;
+    result
+  }
+
+  apply(self: iso) {
+    when() {
+      // Run the pre behaviour
+      Builtin.print1("Pre: {:#}\n", self._id);
+
+      Builtin.print1("----- Barrier reached {} ------\n", self._id);
+
+      // When the barrier is fulfilled run the post behaviour
+      Barrier.wait(self._barrier, Mid.create(self));
+    }
+  }
+}
+
+/*
+ * Create a scenerio with 3 Participants and set everything in motion
+ */
+class Main {
+  main() {
+    var barrier = Barrier.create(3);
+
+    var p1 = Participant.create(1, barrier);
+    var p2 = Participant.create(2, barrier);
+    var p3 = Participant.create(3, barrier);
+
+    p1.apply();
+    p2.apply();
+    p3.apply();
+  }
+}
