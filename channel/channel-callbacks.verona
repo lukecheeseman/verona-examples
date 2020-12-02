@@ -1,0 +1,165 @@
+use "../list.verona"
+
+interface Callback[T] {
+  apply(self: mut, value: T & iso);
+}
+
+class Cell[T] {
+  _data: (T & iso) | (None & imm);
+
+  create(data: T & iso): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
+    result
+  }
+
+  read(self: mut): (T & iso) | (None & imm) where return in self {
+    self._data
+  }
+
+  extract(self: iso): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
+  }
+}
+
+class Channel[T] {
+  _messages: (Queue[Reader[T]] & iso) | (Queue[Writer[T]] & iso);
+
+  create(): Channel[T] & iso {
+    var result = new Channel;
+    result._messages = Queue.create(0);
+    result
+  }
+
+  write(self: mut, value: T & iso) {
+    match (self._messages) {
+      var ws: Queue[Writer[T]] => {
+        (mut-view ws).add(Writer.create(value));
+      }
+      var rs: Queue[Reader[T]] => {
+        match((mut-view rs).remove()) {
+          var _: None => {
+            var ws = Queue.create(0);
+            (mut-view ws).add(Writer.create(value));
+            self._messages = ws;
+          }
+          var r: Reader[T] => r.write(value),
+        }
+      }
+    };
+  }
+
+  read(self: mut, callback: Callback[Cell[T]] & iso) {
+    match (self._messages) {
+      var ws: Queue[Writer[T]] => {
+        match((mut-view ws).remove()) {
+          var _: None => {
+            var rs = Queue.create(0);
+            var r = Reader.create(callback);
+            (mut-view rs).add(r);
+            self._messages = rs;
+          }
+          var w: Writer[T] => (mut-view callback).apply(w.read()),
+        }
+      }
+      var rs: Queue[Reader[T]] => {
+        (mut-view rs).add(Reader.create(callback));
+      }
+    }
+  }
+}
+
+class Reader[T] {
+  _callback: Callback[Cell[T]] & iso;
+
+  create(callback: Callback[Cell[T]] & iso): Reader[T] & iso {
+    var result = new Reader;
+    result._callback = callback;
+    result
+  }
+
+  write(self: iso, value: T & iso) {
+    (mut-view (self._callback)).apply(Cell.create(value));
+  }
+}
+
+class Writer[T] {
+  _data: (Cell[T] & iso) | (None & imm);
+
+  create(data: T & iso): Writer[T] & iso {
+    var result = new Writer;
+    result._data = Cell.create(data);
+    result
+  }
+
+  read(self: iso): Cell[T] & iso {
+    match (self._data = Builtin.freeze(new None)) {
+      var c: Cell[T] => c,
+    }
+  }
+}
+
+class Producer[T: iso] {
+  _channel: cown[Channel[T]] & imm;
+
+  create(channel: cown[Channel[T]] & imm): Producer[T] & iso {
+    var result = new Producer;
+    result._channel = channel;
+    result
+  }
+
+  produce(self: mut, value: T) {
+    when (var channel = self._channel) {
+      channel.write(value);
+    }
+  }
+}
+
+class Consume[T] {
+  create(): Consume[T] & iso {
+    new Consume
+  }
+
+  apply(self: mut, cell: Cell[T] & iso) {
+    Builtin.print1("Recieved: {:#}\n", (mut-view cell).read());
+  }
+}
+
+class Consumer[T] {
+  _channel: cown[Channel[T]] & imm;
+
+  create(channel: cown[Channel[T]] & imm): Consumer[T] & iso {
+    var result = new Consumer;
+    result._channel = channel;
+    result
+  }
+
+  consume(self: mut) {
+    when (var channel = self._channel) {
+      channel.read(Consume.create());
+    }
+  }
+}
+
+class Main {
+  main() {
+    var channel = cown.create(Channel.create());
+
+    when() {
+      var c = Consumer.create(channel);
+      (mut-view c).consume();
+      (mut-view c).consume();
+      (mut-view c).consume();
+      (mut-view c).consume();
+    };
+
+    when() {
+      var p = Producer.create(channel);
+      (mut-view p).produce(U64Obj.create(0));
+      (mut-view p).produce(U64Obj.create(1));
+      (mut-view p).produce(U64Obj.create(2));
+      (mut-view p).produce(U64Obj.create(3));
+    };
+
+  }
+}
