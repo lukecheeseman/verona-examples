@@ -1,0 +1,48 @@
+use "../list.verona"
+
+interface SignalCallback {
+  apply(self: mut);
+}
+
+class SignalCallbackNode {
+  _callback: SignalCallback & iso;
+
+  create(callback: SignalCallback & iso): SignalCallbackNode & iso {
+    var result = new SignalCallbackNode;
+    result._callback = callback;
+    result
+  }
+
+  // call the callback apply
+  apply(self: iso) {
+    (mut-view (self._callback)).apply();
+  }
+}
+
+class Signal {
+  _waiters: Queue[SignalCallbackNode] & iso;
+
+  create(): Signal & iso {
+    var result = new Signal;
+    result._waiters = Queue.create(0);
+    result
+  }
+
+  await(self: mut, callback: SignalCallback & iso) {
+    (mut-view (self._waiters)).add(SignalCallbackNode.create(callback));
+  }
+
+  _run_queue(self: mut) {
+    match (mut-view (self._waiters)).remove() {
+      var _: None => {} // all waiters have started running
+      var c: SignalCallbackNode => {
+        when() { c.apply(); };
+        self._run_queue();
+      }
+    }
+  }
+
+  signal(self: mut) {
+    self._run_queue();
+  }
+}
