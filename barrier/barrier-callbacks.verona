@@ -106,7 +106,7 @@ class Post {
 }
 
 /*
- * The code to be run once all participants synchoneise for the first time.
+ * The code to be run once all participants synchronise for the first time.
  * The participant object gets passed along the chain of callbacks.
  */
 class Mid {

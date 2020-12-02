@@ -1,21 +1,15 @@
 use "signal-callbacks.verona"
 
-/* Channel built using a signal variable or signal:
- *
- * A signal object is wrapper on top of a promise, behaviours can be
- * triggered when a codition has been met by when'ing on the cown returned
- * by await. When the the signal vairable is signalled, the current
- * promise is fulfilled and replaced with a new promise. Any behaviours that
- * we waiting for the signal previouslt can now run.
- *
- * A channel is built on top of this by having a channel use a signal
- * variable that any unfulfilled read waits on, when wite happens (changing
- * the state of the channel) all waiting reads are signalled and all try to
- * read values. Any reads that did not succesfully read a value, wait again
- * on the signal variable.
- *
- * This example then uses a single producer and consumer to write and read
- * values into and out of the channel
+/* Channel built using a signal:
+ * 
+ * A Channel has a Queue of values, a Signal object and read and write methods.
+ * Calling read checks for a value in the queue, if there is one then the read
+ * callback argument is immediately serviced.
+ * Otherwise, a new callback is created and passed to the signal.
+ * This callback checks if a value is in the queue and if so, calls the original
+ * read callback, otherwise passes a new checking callback to the signal object.
+ * When write is called, the passed value is appended to the queue and the signal
+ * is signalled.
  */
 
 /* Cell object so that values can be sent around in promises and extracted
@@ -38,10 +32,17 @@ class Cell[T] {
   }
 }
 
+/*
+ * A callback interface for reading values from a channel.
+ */
 interface ReadCallback[T] {
   apply(self: mut, value: Cell[T] & iso);
 }
 
+/*
+ * A node object to wrap the interface so we can disambiguate
+ * from a other types such as None.
+ */
 class ReadCallbackNode[T] {
   _callback: ReadCallback[T] & iso;
 
@@ -56,6 +57,11 @@ class ReadCallbackNode[T] {
   }
 }
 
+/*
+ * Callback class for capturing a cown of a channel and a read callback.
+ * This callback checks a channels queue, if a value is present the read callback is called
+ * with the value. Otherwise the channels signal is passed a new checking callback.
+ */
 class CheckQueue[T] {
   _chan: cown[Channel[T]] & imm;
   _node: (ReadCallbackNode[T] & iso) | (None & imm);
@@ -69,10 +75,11 @@ class CheckQueue[T] {
 
   apply(self: mut) {
     match (self._node = None.create()) {
-      var _: None => {} // This can't happen TODO: explain
+      var _: None => {} // This should not happen as the signal should not reuse this callback
       var n: ReadCallbackNode[T] => {
         var chan = self._chan;
         when(var c = chan) {
+          // check if a value is present and either call the read callback or wait again
           match (mut-view (c._queue)).remove() {
             var v: Cell[T] => { n.apply(v); }
             var _: None => { (mut-view (c._signal)).await(CheckQueue.create(chan, n)); }
@@ -83,6 +90,10 @@ class CheckQueue[T] {
   }
 }
 
+/*
+ * A channel with a queue of written values and signal for
+ * storing read callbacks and signalling new values in the queue
+ */
 class Channel[T] {
   _queue: Queue[Cell[T]] & iso;
   _signal: Signal & iso;
@@ -94,29 +105,35 @@ class Channel[T] {
     cown.create(result)
   }
 
+  // read a value from channel and call callback with the read value
+  read(channel: cown[Channel[T]] & imm, callback: ReadCallback[T] & iso) {
+    when (var c = channel) {
+      var value = (mut-view (c._queue)).remove();
+      match (value) {
+        // if we can immediately read a value then do
+        var v: Cell[T] => { (mut-view callback).apply(v); }
+
+        // otherwise create a callback that waits for a write to happen
+        var _: None => {
+          var check = CheckQueue.create(channel, ReadCallbackNode.create(callback));
+          (mut-view (c._signal)).await(check);
+        }
+      };
+    }
+  }
+
+  // write a value to channel and signal any waiting reads
   write(channel: cown[Channel[T]] & imm, value: T & iso) {
     when (var c = channel) {
       (mut-view (c._queue)).add(Cell.create(value));
       (mut-view (c._signal)).signal();
     }
   }
-
-  read(channel: cown[Channel[T]] & imm, callback: ReadCallback[T] & iso) {
-    when (var c = channel) {
-      var value = (mut-view (c._queue)).remove();
-      match (value) {
-        var v: Cell[T] => {
-          (mut-view callback).apply(v);
-        }
-
-        var _: None => {
-          (mut-view (c._signal)).await(CheckQueue.create(channel, ReadCallbackNode.create(callback)));
-        }
-      };
-    }
-  }
 }
 
+/*
+ * Example producer and consumer sharing a channel
+ */
 class Producer[T: iso] {
   _channel: cown[Channel[T]] & imm;
 
@@ -137,7 +154,7 @@ class Consume[T] {
   }
 
   apply(self: mut, cell: Cell[T] & iso) {
-    Builtin.print1("Recieved: {:#}\n", (mut-view cell).read());
+    Builtin.print1("Received: {:#}\n", (mut-view cell).read());
   }
 }
 

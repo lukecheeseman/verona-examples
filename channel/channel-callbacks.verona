@@ -22,6 +22,13 @@ class Cell[T] {
   }
 }
 
+/*
+ * A channel has either a queue of readers or a queue of writers, whichever
+ * is currently surplus.
+ * Reading when the are Writers services the read, when there are Readers, enques
+ * the read, when there are no Writers left in the queue of writers swaps the queue.
+ * Similarly for Writers.
+ */
 class Channel[T] {
   _messages: (Queue[Reader[T]] & iso) | (Queue[Writer[T]] & iso);
 
@@ -31,37 +38,52 @@ class Channel[T] {
     result
   }
 
+  /*
+   * Write a value to the channel
+   */
   write(self: mut, value: T & iso) {
     match (self._messages) {
+      // If there only writers then enqueue a new writer
       var ws: Queue[Writer[T]] => {
         (mut-view ws).add(Writer.create(value));
       }
+      // If the queue is of readers...
       var rs: Queue[Reader[T]] => {
         match((mut-view rs).remove()) {
+          // ...but there are none then swap the queue type
           var _: None => {
             var ws = Queue.create(0);
             (mut-view ws).add(Writer.create(value));
             self._messages = ws;
           }
+          // ...and there is a reader then service the read
           var r: Reader[T] => r.write(value),
         }
       }
     };
   }
 
+  /*
+   * Read a value from the channel and call callback
+   * with that value.
+   */
   read(self: mut, callback: Callback[Cell[T]] & iso) {
     match (self._messages) {
+      // If the queue is of writers...
       var ws: Queue[Writer[T]] => {
         match((mut-view ws).remove()) {
+          // ...but there are none then swap the queue type
           var _: None => {
             var rs = Queue.create(0);
             var r = Reader.create(callback);
             (mut-view rs).add(r);
             self._messages = rs;
           }
+          // ...and there is a write then service the read
           var w: Writer[T] => (mut-view callback).apply(w.read()),
         }
       }
+      // If there are only readers then enqueue a new read
       var rs: Queue[Reader[T]] => {
         (mut-view rs).add(Reader.create(callback));
       }
@@ -69,6 +91,10 @@ class Channel[T] {
   }
 }
 
+/*
+ * A reader is a wrapper around a callback, writing to the reader
+ * calls the callback with the value.
+ */
 class Reader[T] {
   _callback: Callback[Cell[T]] & iso;
 
@@ -83,6 +109,10 @@ class Reader[T] {
   }
 }
 
+/*
+ * A writer is a wrapper around some data, reading the writer
+ * extracts the data.
+ */
 class Writer[T] {
   _data: (Cell[T] & iso) | (None & imm);
 
@@ -99,6 +129,9 @@ class Writer[T] {
   }
 }
 
+/*
+ * Create a producer and consumer that share a channel to communicate.
+ */
 class Producer[T: iso] {
   _channel: cown[Channel[T]] & imm;
 

@@ -1,9 +1,15 @@
 use "../list.verona"
 
+/*
+ * An interface for signal callbacks.
+ */
 interface SignalCallback {
   apply(self: mut);
 }
 
+/*
+ * A node to wrap the callback
+ */
 class SignalCallbackNode {
   _callback: SignalCallback & iso;
 
@@ -13,12 +19,16 @@ class SignalCallbackNode {
     result
   }
 
-  // call the callback apply
   apply(self: iso) {
     (mut-view (self._callback)).apply();
   }
 }
 
+/*
+ * A signal is a list of waiting callbacks.
+ * Calling await enqueues a new callback.
+ * Calling signal dequeus and runs all waiting callbacks.
+ */
 class Signal {
   _waiters: Queue[SignalCallbackNode] & iso;
 
@@ -28,6 +38,7 @@ class Signal {
     result
   }
 
+  // create a new waiting call back
   await(self: mut, callback: SignalCallback & iso) {
     (mut-view (self._waiters)).add(SignalCallbackNode.create(callback));
   }
@@ -42,6 +53,7 @@ class Signal {
     }
   }
 
+  // dispatch all waiting callbacks
   signal(self: mut) {
     self._run_queue();
   }
