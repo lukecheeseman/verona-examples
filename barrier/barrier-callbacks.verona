@@ -5,36 +5,7 @@
  * The barried is also reset and can then be reused.
  */
 
-use "../list.verona"
-
-/*
- * General function interface, note that the receiver is a mut.
- * This is so we can call apply inside of a call back node.
- * We can't extract the Callback once it's inside an object as we
- * can disambiguate it from a None.
- */
-interface Callback {
-  apply(self: mut);
-}
-
-/*
- * Require a CallbackNode soe that we can disambiguate between a None
- * and a Callback in Queue. Simply wraps a Callback object.
- */
-class CallbackNode {
-  _callback: Callback & iso;
-
-  create(callback: Callback & iso): CallbackNode & iso {
-    var result = new CallbackNode;
-    result._callback = callback;
-    result
-  }
-
-  // call the callback apply
-  apply(self: iso) {
-    (mut-view (self._callback)).apply();
-  }
-}
+use "signal-callbacks.verona"
 
 /*
  * A Barrier knows the number of calls to wait that must still happen,
@@ -44,40 +15,26 @@ class CallbackNode {
 class Barrier {
   _count: U64 & imm;
   _reset: U64 & imm;
-  _waiters: Queue[CallbackNode] & iso;
+  _signal: Signal & iso;
 
   create(count: U64 & imm): cown[Barrier] & imm {
     var result = new Barrier;
     result._count = count;
     result._reset = count;
-    result._waiters = Queue.create(0);
+    result._signal = Signal.create();
     cown.create(result)
-  }
-
-  /*
-   * Pop all waiters off of the queue and call their apply methods.
-   * Apply methods are called asynchronously.
-   */
-  _run_queue(self: mut) {
-    match (mut-view (self._waiters)).remove() {
-      var _: None => {} // all waiters have started running
-      var c: CallbackNode => {
-        when() { c.apply(); };
-        self._run_queue();
-      }
-    }
   }
 
   /* 
    * Queue the callback and decrement the count.
    * If enough calls to wait have occured, dispatch all the waiters.
    */
-  wait(barrier: cown[Barrier] & imm, callback: Callback & iso) {
+  wait(barrier: cown[Barrier] & imm, callback: SignalCallback & iso) {
     when (barrier) {
-      (mut-view (barrier._waiters)).add(CallbackNode.create(callback));
+      (mut-view (barrier._signal)).await(callback);
       barrier._count = barrier._count - 1;
       if (barrier._count == 0) {
-        barrier._run_queue();
+        (mut-view (barrier._signal)).signal();
         barrier._count = barrier._reset;
       }
     }
