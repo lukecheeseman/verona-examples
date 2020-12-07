@@ -1,4 +1,4 @@
-use "../list.verona"
+use "../common/list.verona"
 
 class Channel[T] {
   _messages: (Queue[Reader[T]] & iso) | (Queue[Writer[T]] & iso);

@@ -1,4 +1,4 @@
-use "../list.verona"
+use "../common/list.verona"
 use "../common/callbacks.verona"
 
 /*

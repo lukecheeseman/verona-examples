@@ -1,4 +1,4 @@
-use "../list.verona"
+use "../common/list.verona"
 
 interface Task[T] {
   promise(self: mut): Promise[T] & iso;

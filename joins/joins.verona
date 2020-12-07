@@ -1,4 +1,4 @@
-use "list.verona"
+use "../common/list.verona"
 
 /* Joins using Channels in Verona
  *
@@ -247,8 +247,8 @@ class Main {
     ((Join.When(put)).And(print)).Do(Task1.create());
     ((Join.When(put)).And(get)).Do(Task1.create());
 
-    /* synchronous methods are the desugared operation from the literature
-     * the async get message contains the continuation channel to write to
+    /* async on a channel allows to send some message and continue
+     * sync on a channel allows us to send some message and wait for a reply
      */
 
     Chan.async(put, U64Obj.create(12));

@@ -1,4 +1,4 @@
-use "../list.verona"
+use "../common/list.verona"
 use "../barrier/signal.verona"
 
 /* Channel built using a signal variable or signal:

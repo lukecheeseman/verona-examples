@@ -1,4 +1,4 @@
-use "../list.verona"
+use "../common/list.verona"
 
 class Group[T] {
   _capacity: U64 & imm;

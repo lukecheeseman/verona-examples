@@ -1,4 +1,4 @@
-use "channel-condition.verona"
+use "../channel/channel-signal.verona"
 
 /* Joins using Channels in Verona
  *
@@ -174,38 +174,5 @@ class Main {
     when(f) {
       Builtin.print1("got: {:#}\n", f);
     }
-
-//    /* we then use the result from the continuation channel */
-//    when(var out = Channel.read(cont)) {
-//      Builtin.print1("got: {:#}\n", out);
-//    };
-//
-//    var p1 = Channel.create();
-//    var p2 = Channel.create();
-//
-//    // synchronisation is just continuation channels...
-//    // so give a continuation channel
-//    var cont1 = Channel.create();
-//    var cont2 = Channel.create();
-//
-//    /* Task2 shows the rendezvous pattern, two continuation channels
-//     * are present at the same time
-//     */
-//    ((Join.When(p1)).And(p2)).Do(Task2.create());
-//
-//    /* setup the two channels to cause the rendezvous */
-//    when() {
-//      Channel.write(p1, Tuple2.create(U64Obj.create(12), cont1));
-//      when(var c = Channel.read(cont1)) {
-//        Builtin.print1("cont1: {:#}\n", c);
-//      }
-//    };
-//
-//    when() {
-//      Channel.write(p2, Tuple2.create(U64Obj.create(45), cont2));
-//      when(var c = Channel.read(cont2)) {
-//        Builtin.print1("cont2: {:#}\n", c);
-//      }
-//    };
   }
 }
