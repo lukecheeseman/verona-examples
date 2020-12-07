@@ -33,40 +33,15 @@ class Cell[T] {
 }
 
 /*
- * A callback interface for reading values from a channel.
- */
-interface ReadCallback[T] {
-  apply(self: mut, value: Cell[T] & iso);
-}
-
-/*
- * A node object to wrap the interface so we can disambiguate
- * from a other types such as None.
- */
-class ReadCallbackNode[T] {
-  _callback: ReadCallback[T] & iso;
-
-  create(callback: ReadCallback[T] & iso): ReadCallbackNode[T] & iso {
-    var result = new ReadCallbackNode;
-    result._callback = callback;
-    result
-  }
-
-  apply(self: iso, value: Cell[T] & iso) {
-    (mut-view (self._callback)).apply(value);
-  }
-}
-
-/*
  * Callback class for capturing a cown of a channel and a read callback.
  * This callback checks a channels queue, if a value is present the read callback is called
  * with the value. Otherwise the channels signal is passed a new checking callback.
  */
 class CheckQueue[T] {
   _chan: cown[Channel[T]] & imm;
-  _node: (ReadCallbackNode[T] & iso) | (None & imm);
+  _node: (Callback1Node[Cell[T]] & iso) | (None & imm);
 
-  create(chan: cown[Channel[T]] & imm, callback: ReadCallbackNode[T] & iso): CheckQueue[T] & iso {
+  create(chan: cown[Channel[T]] & imm, callback: Callback1Node[Cell[T]] & iso): CheckQueue[T] & iso {
     var result = new CheckQueue;
     result._chan = chan;
     result._node = callback;
@@ -76,7 +51,7 @@ class CheckQueue[T] {
   apply(self: mut) {
     match (self._node = None.create()) {
       var _: None => {} // This should not happen as the signal should not reuse this callback
-      var n: ReadCallbackNode[T] => {
+      var n: Callback1Node[T] => {
         var chan = self._chan;
         when(var c = chan) {
           // check if a value is present and either call the read callback or wait again
@@ -106,7 +81,7 @@ class Channel[T] {
   }
 
   // read a value from channel and call callback with the read value
-  read(channel: cown[Channel[T]] & imm, callback: ReadCallback[T] & iso) {
+  read(channel: cown[Channel[T]] & imm, callback: Callback1[Cell[T]] & iso) {
     when (var c = channel) {
       var value = (mut-view (c._queue)).remove();
       match (value) {
@@ -115,7 +90,7 @@ class Channel[T] {
 
         // otherwise create a callback that waits for a write to happen
         var _: None => {
-          var check = CheckQueue.create(channel, ReadCallbackNode.create(callback));
+          var check = CheckQueue.create(channel, Callback1Node.create(callback));
           (mut-view (c._signal)).await(check);
         }
       };

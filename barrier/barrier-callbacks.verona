@@ -29,7 +29,7 @@ class Barrier {
    * Queue the callback and decrement the count.
    * If enough calls to wait have occured, dispatch all the waiters.
    */
-  wait(barrier: cown[Barrier] & imm, callback: SignalCallback & iso) {
+  wait(barrier: cown[Barrier] & imm, callback: Callback & iso) {
     when (barrier) {
       (mut-view (barrier._signal)).await(callback);
       barrier._count = barrier._count - 1;

@@ -1,8 +1,5 @@
 use "../list.verona"
-
-interface Callback[T] {
-  apply(self: mut, value: T & iso);
-}
+use "../common/callbacks.verona"
 
 class Cell[T] {
   _data: (T & iso) | (None & imm);
@@ -67,7 +64,7 @@ class Channel[T] {
    * Read a value from the channel and call callback
    * with that value.
    */
-  read(self: mut, callback: Callback[Cell[T]] & iso) {
+  read(self: mut, callback: Callback1[Cell[T]] & iso) {
     match (self._messages) {
       // If the queue is of writers...
       var ws: Queue[Writer[T]] => {
@@ -96,9 +93,9 @@ class Channel[T] {
  * calls the callback with the value.
  */
 class Reader[T] {
-  _callback: Callback[Cell[T]] & iso;
+  _callback: Callback1[Cell[T]] & iso;
 
-  create(callback: Callback[Cell[T]] & iso): Reader[T] & iso {
+  create(callback: Callback1[Cell[T]] & iso): Reader[T] & iso {
     var result = new Reader;
     result._callback = callback;
     result

@@ -1,0 +1,48 @@
+/*
+ * An interface for no argument callbacks.
+ */
+interface Callback {
+  apply(self: mut);
+}
+
+/*
+ * A node to wrap the callback
+ */
+class CallbackNode {
+  _callback: Callback & iso;
+
+  create(callback: Callback & iso): CallbackNode & iso {
+    var result = new CallbackNode;
+    result._callback = callback;
+    result
+  }
+
+  apply(self: iso) {
+    (mut-view (self._callback)).apply();
+  }
+}
+
+/*
+ * A callback interface for a callback that takes a single value.
+ */
+interface Callback1[T] {
+  apply(self: mut, value: T & iso);
+}
+
+/*
+ * A node object to wrap the interface so we can disambiguate
+ * from a other types such as None.
+ */
+class Callback1Node[T] {
+  _callback: Callback1[T] & iso;
+
+  create(callback: Callback1[T] & iso): Callback1Node[T] & iso {
+    var result = new Callback1Node;
+    result._callback = callback;
+    result
+  }
+
+  apply(self: iso, value: T & iso) {
+    (mut-view (self._callback)).apply(value);
+  }
+}
