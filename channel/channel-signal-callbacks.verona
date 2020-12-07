@@ -1,4 +1,4 @@
-use "../barrier/signal-callbacks.verona"
+use "../common/signal-callbacks.verona"
 
 /* Channel built using a signal:
  * 

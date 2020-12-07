@@ -5,7 +5,7 @@
  * The barried is also reset and can then be reused.
  */
 
-use "signal-callbacks.verona"
+use "../common/signal-callbacks.verona"
 
 /*
  * A Barrier knows the number of calls to wait that must still happen,

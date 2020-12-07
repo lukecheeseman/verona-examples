@@ -1,5 +1,5 @@
 use "../common/list.verona"
-use "../barrier/signal.verona"
+use "../common/signal.verona"
 
 /* Channel built using a signal variable or signal:
  *

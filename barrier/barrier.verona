@@ -5,7 +5,7 @@
  * made trigger, all signals are also triggered.
  */
 
-use "signal.verona"
+use "../common/signal.verona"
 
 class Barrier {
   _count: U64 & imm;

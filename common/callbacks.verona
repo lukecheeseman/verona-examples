@@ -1,12 +1,12 @@
 /*
- * An interface for no argument callbacks.
+ * An interface fo a callback that takes no arguments.
  */
 interface Callback {
   apply(self: mut);
 }
 
 /*
- * A node to wrap the callback
+ * A node object to wrap the interface so we can disambiguate from a other types such as None.
  */
 class CallbackNode {
   _callback: Callback & iso;
@@ -23,15 +23,14 @@ class CallbackNode {
 }
 
 /*
- * A callback interface for a callback that takes a single value.
+ * An interface for a callback that takes a single value.
  */
 interface Callback1[T] {
   apply(self: mut, value: T & iso);
 }
 
 /*
- * A node object to wrap the interface so we can disambiguate
- * from a other types such as None.
+ * A node object to wrap the interface so we can disambiguate from a other types such as None.
  */
 class Callback1Node[T] {
   _callback: Callback1[T] & iso;
