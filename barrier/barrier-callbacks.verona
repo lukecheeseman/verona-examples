@@ -5,7 +5,7 @@
  * The barried is also reset and can then be reused.
  */
 
-use "../common/signal-callbacks.verona"
+use "../common/event-callbacks.verona"
 
 /*
  * A Barrier knows the number of calls to wait that must still happen,
@@ -15,13 +15,13 @@ use "../common/signal-callbacks.verona"
 class Barrier {
   _count: U64 & imm;
   _reset: U64 & imm;
-  _signal: Signal & iso;
+  _event: Event & iso;
 
   create(count: U64 & imm): cown[Barrier] & imm {
     var result = new Barrier;
     result._count = count;
     result._reset = count;
-    result._signal = Signal.create();
+    result._event = Event.create();
     cown.create(result)
   }
 
@@ -31,10 +31,10 @@ class Barrier {
    */
   wait(barrier: cown[Barrier] & imm, callback: Callback & iso) {
     when (barrier) {
-      (mut-view (barrier._signal)).await(callback);
+      (mut-view (barrier._event)).await(callback);
       barrier._count = barrier._count - 1;
       if (barrier._count == 0) {
-        (mut-view (barrier._signal)).signal();
+        (mut-view (barrier._event)).signal();
         barrier._count = barrier._reset;
       }
     }

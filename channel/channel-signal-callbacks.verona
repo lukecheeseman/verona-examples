@@ -1,8 +1,8 @@
-use "../common/signal-callbacks.verona"
+use "../common/event-callbacks.verona"
 
 /* Channel built using a signal:
  * 
- * A Channel has a Queue of values, a Signal object and read and write methods.
+ * A Channel has a Queue of values, a Event object and read and write methods.
  * Calling read checks for a value in the queue, if there is one then the read
  * callback argument is immediately serviced.
  * Otherwise, a new callback is created and passed to the signal.
@@ -57,7 +57,7 @@ class CheckQueue[T] {
           // check if a value is present and either call the read callback or wait again
           match (mut-view (c._queue)).remove() {
             var v: Cell[T] => { n.apply(v); }
-            var _: None => { (mut-view (c._signal)).await(CheckQueue.create(chan, n)); }
+            var _: None => { (mut-view (c._event)).await(CheckQueue.create(chan, n)); }
           }
         }
       }
@@ -71,12 +71,12 @@ class CheckQueue[T] {
  */
 class Channel[T] {
   _queue: Queue[Cell[T]] & iso;
-  _signal: Signal & iso;
+  _event: Event & iso;
 
   create(): cown[Channel[T]] & imm {
     var result = new Channel;
     result._queue = Queue.create(0);
-    result._signal = Signal.create();
+    result._event = Event.create();
     cown.create(result)
   }
 
@@ -91,7 +91,7 @@ class Channel[T] {
         // otherwise create a callback that waits for a write to happen
         var _: None => {
           var check = CheckQueue.create(channel, Callback1Node.create(callback));
-          (mut-view (c._signal)).await(check);
+          (mut-view (c._event)).await(check);
         }
       };
     }
@@ -101,7 +101,7 @@ class Channel[T] {
   write(channel: cown[Channel[T]] & imm, value: T & iso) {
     when (var c = channel) {
       (mut-view (c._queue)).add(Cell.create(value));
-      (mut-view (c._signal)).signal();
+      (mut-view (c._event)).signal();
     }
   }
 }

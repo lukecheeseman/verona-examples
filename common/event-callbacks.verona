@@ -2,15 +2,15 @@ use "../common/list.verona"
 use "../common/callbacks.verona"
 
 /*
- * A signal is a list of waiting callbacks.
+ * An Event is a list of waiting callbacks.
  * Calling await enqueues a new callback.
  * Calling signal dequeus and runs all waiting callbacks.
  */
-class Signal {
+class Event {
   _waiters: Queue[CallbackNode] & iso;
 
-  create(): Signal & iso {
-    var result = new Signal;
+  create(): Event & iso {
+    var result = new Event;
     result._waiters = Queue.create(0);
     result
   }
