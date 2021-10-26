@@ -3,11 +3,17 @@
  */
 class Account {
   _balance: U64 & imm;
+  _frozen: U64 & imm;
 
   create(opening: U64 & imm): Account & iso {
     var result = new Account;
     result._balance = opening;
+    result._frozen = 0;
     result
+  }
+
+  balance(self: mut): U64 & imm {
+    self._balance
   }
 
   withdraw(self: mut, amount: U64 & imm) {
@@ -17,20 +23,62 @@ class Account {
   deposit(self: mut, amount: U64 & imm) {
     self._balance = self._balance + amount;
   }
+
+  freeze(self: mut) {
+    self._frozen = 1;
+  }
+
+  unfreeze(self: mut) {
+    self._frozen = 0;
+  }
+
+  frozen(self: mut): U64 & imm {
+    self._frozen
+  }
 }
 
 class Main {
-  transfer(acc1: cown[Account] & imm, acc2: cown[Account] & imm, amount: U64 & imm) {
-    when(acc1, acc2) {
-      acc1.withdraw(amount);
-      acc2.deposit(amount);
+  transfer(src: cown[Account] & imm, dst: cown[Account] & imm, amount: U64 & imm) {
+    when(src, dst) {
+      if (src.frozen() || dst.frozen()) {
+
+      } else {
+        src.withdraw(amount);
+        dst.deposit(amount);
+      }
     }
   }
 
   main() {
-    var acc1 = cown.create(Account.create(500));
-    var acc2 = cown.create(Account.create(300));
+    var src = cown.create(Account.create(500));
+    var dst = cown.create(Account.create(300));
 
-    Main.transfer(acc1, acc2, 30);
+    when(src, dst) {
+      Builtin.print1("src balance: {:#}\n", src.balance());
+      Builtin.print1("dst balance: {:#}\n\n", dst.balance())
+    };
+
+    Main.transfer(src, dst, 30);
+
+    when(src, dst) {
+      Builtin.print1("src balance: {:#}\n", src.balance());
+      Builtin.print1("dst balance: {:#}\n\n", dst.balance())
+    };
+
+    // The freeze can move before the previous print, which is fine but
+    // it cannot happen after the transaction or the print
+    when(src) {
+      src.freeze();
+      Builtin.print("freezing src\n\n")
+    };
+
+    Main.transfer(src, dst, 30);
+
+    when(src, dst) {
+      Builtin.print1("src balance: {:#}\n", src.balance());
+      Builtin.print1("dst balance: {:#}\n", dst.balance())
+    };
+
+
   }
 }
