@@ -1,4 +1,5 @@
 use "../common/list.verona"
+use "../common/signal.verona"
 
 /* Joins using Channels in Verona
  *
@@ -11,27 +12,6 @@ use "../common/list.verona"
  * Patterns subscribe to changes in channel state
  *   - when a signal as been received from all channels then it checks them all?
  */
-
-class Condition {
-  /* Used to signal/wake up and behaviours that are waiting for this condition
-   * to be satisfied
-   */
-  _promise: Promise[None] & iso;
-
-  create(): Condition & iso {
-    var result = new Condition;
-    result._promise = Promise.create();
-    result
-  }
-
-  await(self: mut): cown[None] & imm {
-    (mut-view (self._promise)).wait_handle()
-  }
-
-  signal(self: mut) {
-    (self._promise = Promise.create()).fulfill(new None);
-  }
-}
 
 /* Cell object so that values can be sent around in promises and extracted
  * later without losing iso access to them */
@@ -83,12 +63,12 @@ class Message[S, R] {
 
 class Chan[S, R] {
   _queue: Queue[Message[S, R]] & iso;
-  _condition: Condition & iso;
+  _signal: Signal & iso;
 
   create(): cown[Chan[S, R]] & imm {
     var result = new Chan;
     result._queue = Queue.create(0);
-    result._condition = Condition.create();
+    result._signal = Signal.create();
     cown.create(result)
   }
 
@@ -99,7 +79,7 @@ class Chan[S, R] {
       if chan.has_message() {
         p.fulfill(new None);
       } else {
-        when (var _ = (mut-view (chan._condition)).await()) {
+        when (var _ = (mut-view (chan._signal)).await()) {
           p.fulfill(new None);
         }
       }
@@ -110,7 +90,7 @@ class Chan[S, R] {
   async(chan: cown[Chan[S, None]] & imm, v: S & iso) {
     when (chan) {
       (mut-view (chan._queue)).add(Message.create(v));
-      (mut-view (chan._condition)).signal();
+      (mut-view (chan._signal)).signal();
     }
   }
 
@@ -119,17 +99,17 @@ class Chan[S, R] {
     var f = (mut-view p).wait_handle();
     when (chan) {
       (mut-view (chan._queue)).add(Message.repliable(new None, p));
-      (mut-view (chan._condition)).signal();
+      (mut-view (chan._signal)).signal();
     };
     f
   }
 
-  syncdata(chan: cown[Chan[S, R]] & imm, v: S & iso): cown[Cell[R]] & imm {
+  sync_with_data(chan: cown[Chan[S, R]] & imm, v: (S & iso)): cown[Cell[R]] & imm {
     var p = Promise.create();
     var f = (mut-view p).wait_handle();
     when (chan) {
       (mut-view (chan._queue)).add(Message.repliable(v, p));
-      (mut-view (chan._condition)).signal();
+      (mut-view (chan._signal)).signal();
     };
     f
   }
