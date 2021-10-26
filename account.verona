@@ -41,8 +41,9 @@ class Main {
   transfer(src: cown[Account] & imm, dst: cown[Account] & imm, amount: U64 & imm) {
     when(src, dst) {
       if (src.frozen() || dst.frozen()) {
-
+        Builtin.print1("tansferring from src to dst failed\n\n", amount);
       } else {
+        Builtin.print1("tansferring {:#} from src to dst\n\n", amount);
         src.withdraw(amount);
         dst.deposit(amount);
       }
