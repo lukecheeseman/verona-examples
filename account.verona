@@ -1,14 +1,17 @@
 /* Example accessing two accounts and transfering money.
  * Demonstrates safe exclusive mutable access, without locking, transaction or two-phase commit
  */
+use "common/bool.verona"
+use "common/callbacks.verona"
+
 class Account {
   _balance: U64 & imm;
-  _frozen: U64 & imm;
+  _frozen: Bool & imm;
 
   create(opening: U64 & imm): Account & iso {
     var result = new Account;
     result._balance = opening;
-    result._frozen = 0;
+    result._frozen = Bool.false();
     result
   }
 
@@ -25,61 +28,152 @@ class Account {
   }
 
   freeze(self: mut) {
-    self._frozen = 1;
+    self._frozen = Bool.true();
   }
 
   unfreeze(self: mut) {
-    self._frozen = 0;
+    self._frozen = Bool.false();
   }
 
-  frozen(self: mut): U64 & imm {
+  frozen(self: mut): Bool & imm {
     self._frozen
   }
 }
 
+class FreezeTask {
+  _account: cown[Account] & imm;
+
+  create(account: cown[Account] & imm): FreezeTask & iso {
+    var result = new FreezeTask;
+    result._account = account;
+    result
+  }
+
+  apply(self: mut) {
+    when(var account = self._account) {
+      Builtin.print("Freezing dst\n");
+      account.freeze()
+    }
+  }
+}
+
 class Main {
-  transfer(src: cown[Account] & imm, dst: cown[Account] & imm, amount: U64 & imm) {
+  main_with_transfer() {
+    var src = cown.create(Account.create(0));
+    var dst = cown.create(Account.create(0));
+
+    when(src) {
+      Builtin.print("Depositing 200 into src\n\n");
+      src.deposit(200)
+    };
+
     when(src, dst) {
-      if (src.frozen() || dst.frozen()) {
+      var amount = 50;
+      if (((src.frozen()).or(dst.frozen())).apply()) {
         Builtin.print1("tansferring from src to dst failed\n\n", amount);
       } else {
         Builtin.print1("tansferring {:#} from src to dst\n\n", amount);
         src.withdraw(amount);
         dst.deposit(amount);
       }
+    };
+  }
+
+  main_with_ordering_problem() {
+    var src = cown.create(Account.create(0));
+    var dst = cown.create(Account.create(0));
+
+    when(src) {
+      Builtin.print("Depositing 200 into src\n\n");
+      src.deposit(200)
+    };
+
+    when(src, dst) {
+      var amount = 50;
+      if (((src.frozen()).or(dst.frozen())).apply()) {
+        Builtin.print1("tansferring from src to dst failed\n\n", amount);
+      } else {
+        Builtin.print1("tansferring {:#} from src to dst\n\n", amount);
+        src.withdraw(amount);
+        dst.deposit(amount);
+      }
+    };
+
+    // This freeze can happen before the transfer takes place, this can be fixed by
+    // placing the behaviour creation inside the previous behaviour, but after the transfer
+    when(dst) {
+      Builtin.print("Freezing dst\n");
+      dst.freeze();
     }
   }
 
-  main() {
-    var src = cown.create(Account.create(500));
-    var dst = cown.create(Account.create(300));
-
+  // Hoist the transfer with a callback into a seperate method
+  // The callback will get called after the transfer has completed
+  transfer_with_callback(src: cown[Account] & imm, dst: cown[Account] & imm, amount: U64 & imm, callback: Callback & iso) {
     when(src, dst) {
-      Builtin.print1("src balance: {:#}\n", src.balance());
-      Builtin.print1("dst balance: {:#}\n\n", dst.balance())
+      if (((src.frozen()).or(dst.frozen())).apply()) {
+        Builtin.print1("tansferring from src to dst failed\n\n", amount);
+      } else {
+        Builtin.print1("tansferring {:#} from src to dst\n\n", amount);
+        src.withdraw(amount);
+        dst.deposit(amount);
+      };
+      (mut-view callback).apply()
     };
+  }
 
-    Main.transfer(src, dst, 30);
+  main_with_transfer_with_callback() {
+    var src = cown.create(Account.create(0));
+    var dst = cown.create(Account.create(0));
 
-    when(src, dst) {
-      Builtin.print1("src balance: {:#}\n", src.balance());
-      Builtin.print1("dst balance: {:#}\n\n", dst.balance())
-    };
-
-    // The freeze can move before the previous print, which is fine but
-    // it cannot happen after the transaction or the print
     when(src) {
-      src.freeze();
-      Builtin.print("freezing src\n\n")
+      Builtin.print("Depositing 200 into src\n\n");
+      src.deposit(200)
     };
 
-    Main.transfer(src, dst, 30);
+    Main.transfer_with_callback(src, dst, 50, FreezeTask.create(dst));
+  }
 
+  transfer_with_promise(src: cown[Account] & imm, dst: cown[Account] & imm, amount: U64 & imm): cown[None] & imm {
+    var p = Promise.create();
+    var f = (mut-view p).wait_handle();
     when(src, dst) {
-      Builtin.print1("src balance: {:#}\n", src.balance());
-      Builtin.print1("dst balance: {:#}\n", dst.balance())
+      if (((src.frozen()).or(dst.frozen())).apply()) {
+        Builtin.print1("tansferring from src to dst failed\n\n", amount);
+      } else {
+        Builtin.print1("tansferring {:#} from src to dst\n\n", amount);
+        src.withdraw(amount);
+        dst.deposit(amount);
+      };
+      p.fulfill(new None);
+    };
+    f
+  }
+
+  main_with_transfer_with_promise() {
+    var src = cown.create(Account.create(0));
+    var dst = cown.create(Account.create(0));
+
+    when(src) {
+      Builtin.print("Depositing 200 into src\n\n");
+      src.deposit(200)
     };
 
+    when(var _ = Main.transfer_with_promise(src, dst, 50)) {
+      // FIXME: We should be able to put dst in the cown request here but it causes a runtime error
+      when(dst) {
+        Builtin.print("Freezing dst\n");
+        dst.freeze()
+      }
+    };
+  }
 
+  main() {
+    // Comment and uncomment diffenr implementations to see how they run
+
+    // Main.main_with_transfer();
+    // Main.main_with_ordering_problem();
+    // Main.main_with_transfer_with_callback();
+    Main.main_with_transfer_with_promise();
   }
 }

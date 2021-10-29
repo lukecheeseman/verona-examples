@@ -1,0 +1,103 @@
+/* Concert hall boooking example
+ *
+ * Each seat is modelled as a concurrent owner.
+ *
+ * Each terminal holds a reference to a cown of each seat and can attempt to book a seat
+ * and reports whether the reservation was succesful.
+ *
+ */
+
+use "../common/bool.verona"
+
+class Seat {
+  // reserved is a boolean value that can only be set once
+  _reserved: Bool & imm;
+  _seatno: U64 & imm;
+
+  create(seatno: U64 & imm): Seat & iso {
+    var result = new Seat;
+    result._reserved = Bool.false();
+    result._seatno = seatno;
+    result
+  }
+
+  // reserve the seat and report whether it was sucessfully reserved
+  reserve(self: mut): Bool & imm {
+    (self._reserved = Bool.true()).lnot()
+  }
+
+  seatno(self: mut): U64 & imm {
+    self._seatno
+  }
+}
+
+// Terminal knows about 3 seats
+class Terminal {
+  _s1: cown[Seat] & imm;
+  _s2: cown[Seat] & imm;
+  _s3: cown[Seat] & imm;
+  _id: U64 & imm;
+
+  create(id: U64 & imm, s1: cown[Seat] & imm, s2: cown[Seat] & imm, s3: cown[Seat] & imm): Terminal & iso {
+    var result = new Terminal;
+    result._s1 = s1;
+    result._s2 = s2;
+    result._s3 = s3;
+    result._id = id;
+    result
+  }
+
+  // attempt to reserve a seat and report whether it was succesfully
+  // reserved or not
+  _reserve(self: mut, seat: cown[Seat] & imm) {
+    var tid = self._id;
+    when(seat) {
+      if ((seat.reserve()).apply()) {
+        Builtin.print2("Terminal {:#} reserved {:#}\n", tid, seat.seatno());
+      } else {
+        Builtin.print2("Terminal {:#} failed to reserved {:#}\n", tid, seat.seatno());
+      }
+    }
+  }
+
+  reserve(self: mut, seat: U64 & imm) {
+    if seat == 1 {
+      self._reserve(self._s1)
+    } else {
+      if seat == 2 {
+        self._reserve(self._s2)
+      } else {
+        if seat == 3 {
+          self._reserve(self._s3)
+        } else {
+           Builtin.print2("Termanal {:#} attempted to book invalid seat {:#}", self._id, seat)
+        }
+      }
+    }
+  }
+}
+
+// Build the example out of two terminals that share the same seats. The
+// terminals run asynchronously and both try to book all three seats.
+class Main {
+  main() {
+    var s1 = cown.create(Seat.create(1));
+    var s2 = cown.create(Seat.create(2));
+    var s3 = cown.create(Seat.create(3));
+
+    var t1 = Terminal.create(1, s1, s2, s3);
+    var t2 = Terminal.create(2, s1, s2, s3);
+
+    when() {
+      (mut-view t1).reserve(1);
+      (mut-view t1).reserve(2);
+      (mut-view t1).reserve(3);
+    };
+
+    when() {
+      (mut-view t2).reserve(3);
+      (mut-view t2).reserve(2);
+      (mut-view t2).reserve(1);
+    };
+  }
+}

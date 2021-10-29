@@ -9,19 +9,21 @@
  * two terminals run asyncrhonously and both try to book all three seats.
  */
 
+use "../common/bool.verona"
+
 class Seat {
   // reserved is a boolean value that can only be set once
-  _reserved: U64 & imm;
+  _reserved: Bool & imm;
 
   create(): Seat & iso {
     var result = new Seat;
-    result._reserved = 0;
+    result._reserved = Bool.false();
     result
   }
 
   // reserve the seat and report whether it was sucessfully reserved
-  reserve(self: mut): U64 & imm {
-    1 - (self._reserved = 1)
+  reserve(self: mut): Bool & imm {
+    (self._reserved = Bool.true()).lnot()
   }
 }
 
@@ -42,7 +44,7 @@ class CentralComputer {
 
   // attempt to reserve a seat and report wether it was succesfully
   // reserved or not
-  reserve(self: mut, seat: U64 & imm): U64 & imm {
+  reserve(self: mut, seat: U64 & imm): Bool & imm {
     if seat == 1 {
       (mut-view (self._s1)).reserve()
     } else {
@@ -52,7 +54,7 @@ class CentralComputer {
         if seat == 3 {
           (mut-view (self._s3)).reserve()
         } else {
-           0
+          Bool.false()
         }
       }
     }
@@ -75,7 +77,7 @@ class Terminal {
   reserve(self: mut, seat: U64 & imm) {
     var tid = self._id;
     when (var c = self._computer) {
-      if ((mut-view c).reserve(seat)) {
+      if (((mut-view c).reserve(seat)).apply()) {
         Builtin.print2("Terminal {:#} reserved {:#}\n", tid, seat);
       } else {
         Builtin.print2("Terminal {:#} failed to reserved {:#}\n", tid, seat);
@@ -83,6 +85,9 @@ class Terminal {
     }
   }
 }
+
+// TODO: i think this example is broken an that one terminal will always book all 3 seats
+//
 
 // Build the example out of two terminals that share a central computer. The
 // terminals run asynchronously and both try to book all three seats.

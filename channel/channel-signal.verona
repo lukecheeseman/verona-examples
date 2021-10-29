@@ -121,6 +121,21 @@ class Consumer[T: iso] {
   }
 }
 
+class Main {
+  main() {
+    var channel = Channel.create();
+
+    Channel.write(channel. U64Obj.create(10));
+
+    when(var cell = Channel.read(channel)) {
+      match (cell.extract()) {
+        var n: None => Builtin.print("Got None\n"),
+        var o: U64Obj => Builtin.print1("Got {:#}\n", o.v),
+      }
+    }
+  }
+}
+
 /* Create a producer and consumer that share a channel */
 /*
 class Main {

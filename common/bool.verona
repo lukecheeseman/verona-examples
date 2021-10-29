@@ -1,0 +1,28 @@
+class Bool {
+  _val: U64 & imm;
+
+  _create(val: U64 & imm): Bool & imm {
+    var result = new Bool;
+    result._val = val;
+    Builtin.freeze(result)
+  }
+
+  false(): Bool & imm { Bool._create(0) }
+  true(): Bool & imm { Bool._create(1) }
+
+  and(self: imm, o: Bool & imm): Bool & imm {
+    if self._val { o } else { self }
+  }
+
+  or(self: imm, o: Bool & imm): Bool & imm {
+    if self._val { self } else { o }
+  }
+
+  lnot(self: imm): Bool & imm {
+    if self._val { Bool.true() } else { Bool.false() }
+  }
+
+  apply(self: imm): U64 & imm {
+    self._val
+  }
+}
