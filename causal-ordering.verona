@@ -1,25 +1,24 @@
-/* An example discussing behaviour ordering and nested behaviours
- *
- * < - causal
- * << - dispatch
- *
- *  b1 < b2 < b4
- *        <   <
- *        b3  b5
- *
- *  b1 << b3
- *  b1 << b5
- *
- *  Importantly, the following is a permitted execution:
- *  b2
- *  b4
- *  b1
- *  b5
- *  b3
- */
-
 class Main {
-  main() {
+  ex1() {
+    /* An example discussing behaviour ordering and nested behaviours
+    *
+    * < - causal
+    * << - dispatch
+    *
+    *  b1 < b2 < b4
+    *        <   <
+    *        b3  b5
+    *
+    *  b1 << b3
+    *  b1 << b5
+    *
+    *  Importantly, the following is a permitted execution:
+    *  b2
+    *  b4
+    *  b1
+    *  b5
+    *  b3
+    */
     var c1 = cown.create(new None);
     var c2 = cown.create(new None);
     var c3 = cown.create(new None);
@@ -41,5 +40,35 @@ class Main {
         Builtin.print("b5\n");
       }
     };
+  }
+
+  ex2() {
+    /* In this example we have:
+      b1 << b4
+      b2 << b5
+
+      As well as any created orders that are necessary e.g. b0 will run before any behaviour.
+    */
+
+    var c0 = cown.create(new None);
+    var c1 = cown.create(new None);
+    var c2 = cown.create(new None);
+    var c3 = cown.create(new None);
+    when ( c0 ) { /* b0 */
+      when ( c1 , var _c2 = c2 ) { /* b1 */
+        when ( c2 ) { /* b2 */ }
+      };
+      when (var _c1 = c1 ) { /* b3 */
+        when (var _c2 = c2 , c3 ) { /* b4 */
+          when ( c2 ) { /* b5 */ };
+          when ( c1 ) { /* b6 */ }
+        }
+      }
+    };
+  }
+
+  main() {
+    // ex1();
+    // ex2()
   }
 }
