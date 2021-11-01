@@ -26,7 +26,7 @@ A solution with a cown of santa and cowns of groups of workers. Workers add them
 
 ## groups-and-tasks.verona
 
-Workers are colelcted into groups. A task creates a promise and hands the it to a group of workers, a behaviour waits for the promise to be fulfilled with the desired number of workers. When the number of workers are available in the group, the tasks promise is fulfilled and a new promise created in its place.
+Workers are collected into groups. A task creates a promise and hands the it to a group of workers, a behaviour waits for the promise to be fulfilled with the desired number of workers. When the number of workers are available in the group, the tasks promise is fulfilled and a new promise created in its place.
 
 ## groups-and-pools.verona
 
