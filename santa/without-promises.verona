@@ -1,0 +1,204 @@
+use "../common/list.verona"
+
+class Cell[T] {
+  _data: (T & iso) | (None & imm);
+
+  create(data: T & iso): Cell[T] & iso {
+    var result = new Cell;
+    result._data = data;
+    result
+  }
+
+  extract(self: iso): (T & iso) | (None & imm) {
+    self._data = Builtin.freeze(new None)
+  }
+}
+
+interface Request[T] {
+  count(self: imm): U64 & imm;
+  apply(self: imm, args: Queue[Cell[T]] & iso);
+}
+
+class Group[T] {
+  _resources: Queue[Cell[T]] & iso;
+  _request: (Request[T] & imm) | (None & imm);
+
+  create(): cown[Group[T]] & imm {
+    var result = new Group;
+    result._resources = Queue.create(0);
+    result._request = None.create();
+    cown.create(result)
+  }
+
+  // Recursion type checks quicker than iteration
+  _construct_subgroup(resources: Queue[Cell[T]] & mut, subgroup: Queue[Cell[T]] & mut, n: U64 & imm) {
+    if n > 0 {
+      match (resources.remove()) {
+        var _: None => { /* Shouldn't happen as we checked we had enough */ }
+        var r: Cell[T] => {
+          (mut-view subgroup).add(r);
+          Group._construct_subgroup(resources, subgroup, n - 1);
+        }
+      };
+    };
+  }
+
+  _process(group: cown[Group[T]] & imm) {
+    when(var g = group) {
+      match g._request {
+        var _: None => { /* do nothing */ }
+        var request: Request[T] => {
+          var required = request.count();
+          if (g._resources).length >= required {
+            var subgroup = Queue.create(3);
+            Group._construct_subgroup(mut-view (g._resources), mut-view subgroup, required);
+            request.apply(subgroup);
+          }
+        }
+      }
+    }
+  }
+
+  add(group: cown[Group[T]] & imm, resource: Cell[T] & iso) {
+    when(var g = group) {
+      (mut-view (g._resources)).add(resource);
+    };
+    Group._process(group);
+  }
+
+  request(group: cown[Group[T]] & imm, request: Request[T] & imm) {
+    when(var g = group) {
+      g._request = request;
+    };
+  }
+}
+
+class Reindeer {}
+class Elf {}
+class Santa {}
+
+class RequestReindeer {
+  work: Work & imm;
+
+  create(work: Work & imm): RequestReindeer & imm {
+    var result = new RequestReindeer;
+    result.work = work;
+    Builtin.freeze(result)
+  }
+
+  count(self: imm): U64 & imm { 9 }
+
+  apply(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
+    (self.work).add_waiting_reindeer(reindeer);
+  }
+}
+
+class RequestElves {
+  work: Work & imm;
+
+  create(work: Work & imm): RequestElves & imm {
+    var result = new RequestElves;
+    result.work = work;
+    Builtin.freeze(result)
+  }
+
+  count(self: imm): U64 & imm { 3 }
+
+  apply(self: imm, elves: Queue[Cell[Elf]] & iso) {
+    (self.work).add_waiting_elves(elves);
+  }
+}
+
+class Work {
+  santa: cown[Santa] & imm;
+  elves: cown[Group[Elf]] & imm;
+  reindeer: cown[Group[Reindeer]] & imm;
+
+  waiting_elves: cown[Queue[Queue[Cell[Elf]]]] & imm;
+  waiting_reindeer: cown[Queue[Queue[Cell[Reindeer]]]] & imm;
+
+  create(elves: cown[Group[Elf]] & imm, reindeer: cown[Group[Reindeer]] & imm): Work & imm {
+    var result = new Work;
+    result.santa = cown.create(new Santa);
+    result.elves = elves;
+    result.reindeer = reindeer;
+    result.waiting_elves = cown.create(Queue.create(4));
+    result.waiting_reindeer = cown.create(Queue.create(5));
+    Builtin.freeze(result)
+  }
+
+  add_waiting_elves(self: imm, elves: Queue[Cell[Elf]] & iso) {
+    when(var waiting = self.waiting_elves) {
+      waiting.add(elves);
+      self.process();
+    };
+  }
+
+  add_waiting_reindeer(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
+    when(var waiting = self.waiting_reindeer) {
+      waiting.add(reindeer);
+      self.process();
+    };
+  }
+
+  _return[T](group: cown[Group[T]] & imm, subgroup: Queue[Cell[T]] & iso) {
+    match (mut-view subgroup).remove() {
+      var _: None => { /* We're done */ }
+      var member: Cell[T] => {
+        Group.add(group, member);
+        Work._return(group, subgroup);
+      }
+    }
+  }
+
+  process(self: imm) {
+    when(var santa = self.santa, var elves = self.waiting_elves, var reindeer = self.waiting_reindeer) {
+      match reindeer.remove() { /* prioritise the reindeer */
+        var _: None => {
+          match elves.remove() {
+            var _: None => { /* there was no work */ }
+            var elves: Queue[Cell[Elf]] => {
+              when() {
+                Builtin.print("Elves and Santa meet to Work\n");
+                Work._return(self.elves, elves);
+              };
+              self.process();
+            }
+          }
+        }
+
+        var reindeer: Queue[Cell[Reindeer]] => {
+          when() {
+            Builtin.print("Reindeer and Santa meet to work\n");
+            Work._return(self.reindeer, reindeer);
+          };
+          self.process();
+        }
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var elves = Group.create();
+    var reindeer = Group.create();
+
+    var work = Work.create(elves, reindeer);
+
+    Group.request(elves, RequestElves.create(work));
+    Group.request(reindeer, RequestReindeer.create(work));
+
+    var i = 0;
+    while i < 10 {
+      Group.add(elves, Cell.create(new Elf));
+      i = i + 1;
+    };
+
+    i = 0;
+    while i < 9 {
+      Group.add(reindeer, Cell.create(new Reindeer));
+      i = i + 1;
+    };
+  }
+}

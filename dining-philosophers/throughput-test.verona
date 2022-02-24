@@ -1,0 +1,54 @@
+class Fork {
+  create(): cown[Fork] & imm { cown.create( new Fork) }
+  use(self: mut) { }
+}
+
+class Philosopher
+{
+  id: U64 & imm;
+  hunger: U64 & imm;
+  left: cown[Fork] & imm;
+  right: cown[Fork] & imm;
+
+  create(id: U64 & imm, hunger: U64 & imm, left: cown[Fork] & imm, right: cown[Fork] & imm) {
+    var result = new Philosopher;
+    result.id = id;
+    result.hunger = hunger;
+    result.left = left;
+    result.right = right;
+    result._eat();
+  }
+
+  _eat(self: iso) {
+    when() {
+      when (var l = self.left, var r = self.right) {
+        if (self.hunger != 0) {
+          l.use();
+          r.use();
+          self.hunger = self.hunger - 1;
+          self._eat();
+        }
+      }
+    }
+  }
+}
+
+class Main {
+  main() {
+    var first = Fork.create();
+    var prev = first;
+
+    var limit = 100;
+    var hunger = 100;
+
+    var i = 0;
+    while (i < limit - 1) {
+      var next = Fork.create();
+      Philosopher.create(i, hunger, prev, next);
+      prev = next;
+      i = i + 1
+    };
+
+    Philosopher.create(i, hunger, prev, first);
+  }
+}
