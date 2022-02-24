@@ -117,14 +117,39 @@ class Work {
   waiting_elves: cown[Queue[Queue[Cell[Elf]]]] & imm;
   waiting_reindeer: cown[Queue[Queue[Cell[Reindeer]]]] & imm;
 
-  create(elves: cown[Group[Elf]] & imm, reindeer: cown[Group[Reindeer]] & imm): Work & imm {
+  // Do these recursively as they type check much quicker that iteration
+  _create_elves(group: cown[Group[Elf]] & imm, n: U64 & imm) {
+    if n > 0 {
+      Group.add(group, Cell.create(new Elf));
+      Work._create_elves(group, n - 1);
+    }
+  }
+
+  _create_reindeer(group: cown[Group[Reindeer]] & imm, n: U64 & imm) {
+    if n > 0 {
+      Group.add(group, Cell.create(new Reindeer));
+      Work._create_reindeer(group, n - 1);
+    }
+  }
+
+  create() {
     var result = new Work;
     result.santa = cown.create(new Santa);
-    result.elves = elves;
-    result.reindeer = reindeer;
+
+    result.elves = Group.create();
+    result.reindeer = Group.create();
     result.waiting_elves = cown.create(Queue.create(4));
     result.waiting_reindeer = cown.create(Queue.create(5));
-    Builtin.freeze(result)
+
+    // The groups are all set up so freeze everything so we can
+    // share the record to where it needs to be referenced
+    var work = Builtin.freeze(result);
+
+    Group.request(work.elves, RequestElves.create(work));
+    Group.request(work.reindeer, RequestReindeer.create(work));
+
+    Work._create_elves(work.elves, 10);
+    Work._create_reindeer(work.reindeer, 9);
   }
 
   add_waiting_elves(self: imm, elves: Queue[Cell[Elf]] & iso) {
@@ -181,24 +206,6 @@ class Work {
 
 class Main {
   main() {
-    var elves = Group.create();
-    var reindeer = Group.create();
-
-    var work = Work.create(elves, reindeer);
-
-    Group.request(elves, RequestElves.create(work));
-    Group.request(reindeer, RequestReindeer.create(work));
-
-    var i = 0;
-    while i < 10 {
-      Group.add(elves, Cell.create(new Elf));
-      i = i + 1;
-    };
-
-    i = 0;
-    while i < 9 {
-      Group.add(reindeer, Cell.create(new Reindeer));
-      i = i + 1;
-    };
+    Work.create();
   }
 }
