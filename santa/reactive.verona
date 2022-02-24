@@ -81,35 +81,23 @@ class Reindeer {}
 class Elf {}
 class Santa {}
 
-class RequestReindeer {
+class RequestSubgroup[T] {
+  size: U64 & imm;
   work: Work & imm;
+  waiting: cown[Queue[Queue[Cell[T]]]] & imm;
 
-  create(work: Work & imm): RequestReindeer & imm {
-    var result = new RequestReindeer;
+  create(size: U64 & imm, work: Work & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm): RequestSubgroup[T] & imm {
+    var result = new RequestSubgroup;
+    result.size = size;
     result.work = work;
+    result.waiting = waiting;
     Builtin.freeze(result)
   }
 
-  count(self: imm): U64 & imm { 9 }
+  count(self: imm): U64 & imm { self.size }
 
-  apply(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
-    (self.work)._add_waiting_reindeer(reindeer);
-  }
-}
-
-class RequestElves {
-  work: Work & imm;
-
-  create(work: Work & imm): RequestElves & imm {
-    var result = new RequestElves;
-    result.work = work;
-    Builtin.freeze(result)
-  }
-
-  count(self: imm): U64 & imm { 3 }
-
-  apply(self: imm, elves: Queue[Cell[Elf]] & iso) {
-    (self.work)._add_waiting_elves(elves);
+  apply(self: imm, subgroup: Queue[Cell[T]] & iso) {
+    (self.work)._add_waiting(self.waiting, subgroup);
   }
 }
 
@@ -149,25 +137,11 @@ class Work {
     // share the record to where it needs to be referenced
     var work = Builtin.freeze(result);
 
-    Group.request(work.elves, RequestElves.create(work));
-    Group.request(work.reindeer, RequestReindeer.create(work));
+    Group.request(work.elves, RequestSubgroup.create(3, work, work.waiting_elves));
+    Group.request(work.reindeer, RequestSubgroup.create(9, work, work.waiting_reindeer));
 
     Work._create_elves(work.elves, 10);
     Work._create_reindeer(work.reindeer, 9);
-  }
-
-  _add_waiting_elves(self: imm, elves: Queue[Cell[Elf]] & iso) {
-    when(var waiting = self.waiting_elves) {
-      waiting.add(elves);
-      self._process();
-    };
-  }
-
-  _add_waiting_reindeer(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
-    when(var waiting = self.waiting_reindeer) {
-      waiting.add(reindeer);
-      self._process();
-    };
   }
 
   _return[T](group: cown[Group[T]] & imm, subgroup: Queue[Cell[T]] & iso) {
@@ -201,6 +175,13 @@ class Work {
         }
       }
     }
+  }
+
+  _add_waiting[T](self: imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm, subgroup: Queue[Cell[T]] & iso) {
+    when(waiting) {
+      waiting.add(subgroup);
+      self._process();
+    };
   }
 }
 
