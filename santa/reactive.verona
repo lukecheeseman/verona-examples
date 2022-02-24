@@ -53,7 +53,10 @@ class Group[T] {
             var subgroup = Queue.create(3);
             Group._construct_subgroup(mut-view (g._resources), mut-view subgroup, required);
             request.apply(subgroup);
-          }
+
+            /* Keep going as we might be able to create more reactions */
+            Group._process(group);
+          };
         }
       }
     }
@@ -70,6 +73,7 @@ class Group[T] {
     when(var g = group) {
       g._request = request;
     };
+    Group._process(group);
   }
 }
 
@@ -89,7 +93,7 @@ class RequestReindeer {
   count(self: imm): U64 & imm { 9 }
 
   apply(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
-    (self.work).add_waiting_reindeer(reindeer);
+    (self.work)._add_waiting_reindeer(reindeer);
   }
 }
 
@@ -105,7 +109,7 @@ class RequestElves {
   count(self: imm): U64 & imm { 3 }
 
   apply(self: imm, elves: Queue[Cell[Elf]] & iso) {
-    (self.work).add_waiting_elves(elves);
+    (self.work)._add_waiting_elves(elves);
   }
 }
 
@@ -152,17 +156,17 @@ class Work {
     Work._create_reindeer(work.reindeer, 9);
   }
 
-  add_waiting_elves(self: imm, elves: Queue[Cell[Elf]] & iso) {
+  _add_waiting_elves(self: imm, elves: Queue[Cell[Elf]] & iso) {
     when(var waiting = self.waiting_elves) {
       waiting.add(elves);
-      self.process();
+      self._process();
     };
   }
 
-  add_waiting_reindeer(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
+  _add_waiting_reindeer(self: imm, reindeer: Queue[Cell[Reindeer]] & iso) {
     when(var waiting = self.waiting_reindeer) {
       waiting.add(reindeer);
-      self.process();
+      self._process();
     };
   }
 
@@ -176,28 +180,24 @@ class Work {
     }
   }
 
-  process(self: imm) {
+  _process(self: imm) {
     when(var santa = self.santa, var elves = self.waiting_elves, var reindeer = self.waiting_reindeer) {
       match reindeer.remove() { /* prioritise the reindeer */
         var _: None => {
           match elves.remove() {
             var _: None => { /* there was no work */ }
             var elves: Queue[Cell[Elf]] => {
-              when() {
-                Builtin.print("Elves and Santa meet to Work\n");
-                Work._return(self.elves, elves);
-              };
-              self.process();
+              Builtin.print("Elves and Santa meet to Work\n");
+              Work._return(self.elves, elves);
+              self._process();
             }
           }
         }
 
         var reindeer: Queue[Cell[Reindeer]] => {
-          when() {
-            Builtin.print("Reindeer and Santa meet to work\n");
-            Work._return(self.reindeer, reindeer);
-          };
-          self.process();
+          Builtin.print("Reindeer and Santa meet to work\n");
+          Work._return(self.reindeer, reindeer);
+          self._process();
         }
       }
     }
