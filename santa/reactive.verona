@@ -14,9 +14,27 @@ class Cell[T] {
   }
 }
 
+class SubGroup[T] {
+  _resources: Queue[Cell[T]] & iso;
+
+  create(): SubGroup[T] & iso {
+    var result = new SubGroup;
+    result._resources = Queue.create(404);
+    result
+  }
+
+  add(self: mut, resource: Cell[T] & iso) {
+    (mut-view (self._resources)).add(resource);
+  }
+
+  remove(self:mut): (Cell[T] & iso) | (None & imm) {
+    (mut-view (self._resources)).remove()
+  }
+}
+
 interface Request[T] {
   count(self: imm): U64 & imm;
-  apply(self: imm, args: Queue[Cell[T]] & iso);
+  apply(self: imm, subgroup: SubGroup[T] & iso);
 }
 
 class Group[T] {
@@ -31,7 +49,7 @@ class Group[T] {
   }
 
   // Recursion type checks quicker than iteration
-  _construct_subgroup(resources: Queue[Cell[T]] & mut, subgroup: Queue[Cell[T]] & mut, n: U64 & imm) {
+  _construct_subgroup(resources: Queue[Cell[T]] & mut, subgroup: SubGroup[T] & mut, n: U64 & imm) {
     if n > 0 {
       match (resources.remove()) {
         var _: None => { /* Shouldn't happen as we checked we had enough */ }
@@ -50,7 +68,7 @@ class Group[T] {
         var request: Request[T] => {
           var required = request.count();
           if (g._resources).length >= required {
-            var subgroup = Queue.create(3);
+            var subgroup = SubGroup.create();
             Group._construct_subgroup(mut-view (g._resources), mut-view subgroup, required);
             request.apply(subgroup);
 
@@ -84,9 +102,9 @@ class Santa {}
 class RequestSubgroup[T] {
   size: U64 & imm;
   work: Work & imm;
-  waiting: cown[Queue[Queue[Cell[T]]]] & imm;
+  waiting: cown[Queue[SubGroup[T]]] & imm;
 
-  create(size: U64 & imm, work: Work & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm): RequestSubgroup[T] & imm {
+  create(size: U64 & imm, work: Work & imm, waiting: cown[Queue[SubGroup[T]]] & imm): RequestSubgroup[T] & imm {
     var result = new RequestSubgroup;
     result.size = size;
     result.work = work;
@@ -96,7 +114,7 @@ class RequestSubgroup[T] {
 
   count(self: imm): U64 & imm { self.size }
 
-  apply(self: imm, subgroup: Queue[Cell[T]] & iso) {
+  apply(self: imm, subgroup: SubGroup[T] & iso) {
     (self.work)._add_waiting(self.waiting, subgroup);
   }
 }
@@ -106,8 +124,8 @@ class Work {
   elves: cown[Group[Elf]] & imm;
   reindeer: cown[Group[Reindeer]] & imm;
 
-  waiting_elves: cown[Queue[Queue[Cell[Elf]]]] & imm;
-  waiting_reindeer: cown[Queue[Queue[Cell[Reindeer]]]] & imm;
+  waiting_elves: cown[Queue[SubGroup[Elf]]] & imm;
+  waiting_reindeer: cown[Queue[SubGroup[Reindeer]]] & imm;
 
   // Do these recursively as they type check much quicker that iteration
   _create_elves(group: cown[Group[Elf]] & imm, n: U64 & imm) {
@@ -144,7 +162,7 @@ class Work {
     Work._create_reindeer(work.reindeer, 9);
   }
 
-  _return[T](group: cown[Group[T]] & imm, subgroup: Queue[Cell[T]] & iso) {
+  _return[T](group: cown[Group[T]] & imm, subgroup: SubGroup[T] & iso) {
     match (mut-view subgroup).remove() {
       var _: None => { /* We're done */ }
       var member: Cell[T] => {
@@ -160,7 +178,7 @@ class Work {
         var _: None => {
           match elves.remove() {
             var _: None => { /* there was no work */ }
-            var elves: Queue[Cell[Elf]] => {
+            var elves: SubGroup[Elf] => {
               Builtin.print("Elves and Santa meet to Work\n");
               Work._return(self.elves, elves);
               self._process();
@@ -168,7 +186,7 @@ class Work {
           }
         }
 
-        var reindeer: Queue[Cell[Reindeer]] => {
+        var reindeer: SubGroup[Reindeer] => {
           Builtin.print("Reindeer and Santa meet to work\n");
           Work._return(self.reindeer, reindeer);
           self._process();
@@ -177,7 +195,7 @@ class Work {
     }
   }
 
-  _add_waiting[T](self: imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm, subgroup: Queue[Cell[T]] & iso) {
+  _add_waiting[T](self: imm, waiting: cown[Queue[SubGroup[T]]] & imm, subgroup: SubGroup[T] & iso) {
     when(waiting) {
       waiting.add(subgroup);
       self._process();
