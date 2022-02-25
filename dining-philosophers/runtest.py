@@ -1,7 +1,4 @@
-import os
-import time
-import json
-import argparse
+import subprocess, os, time, json, argparse
 
 # This will measure setup and teardown time
 
@@ -23,7 +20,7 @@ if __name__ == "__main__":
             total = 0
             for exp in range(args.repeats):
                 start = time.time()
-                os.system(f"{getattr(args, acquire)} throughput-test.verona --run-cores={num} --run")
+                subprocess.run([f"{getattr(args, acquire)}", "throughput-test.verona", f"--run-cores={num}", "--run"], check=True)
                 end = time.time()
                 total += (end - start)
                 if exp % 10 == 0:
