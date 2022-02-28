@@ -120,11 +120,10 @@ class RequestSubgroup[T] {
 }
 
 class Work {
-  santa: cown[Group[Santa]] & imm;
+  santa: cown[Santa] & imm;
   elves: cown[Group[Elf]] & imm;
   reindeer: cown[Group[Reindeer]] & imm;
 
-  waiting_santa: cown[Queue[SubGroup[Santa]]] & imm;
   waiting_elves: cown[Queue[SubGroup[Elf]]] & imm;
   waiting_reindeer: cown[Queue[SubGroup[Reindeer]]] & imm;
 
@@ -146,11 +145,10 @@ class Work {
   create() {
     var result = new Work;
 
-    result.santa = Group.create();
+    result.santa = cown.create(new Santa);
     result.elves = Group.create();
     result.reindeer = Group.create();
 
-    result.waiting_santa = cown.create(Queue.create(6));
     result.waiting_elves = cown.create(Queue.create(4));
     result.waiting_reindeer = cown.create(Queue.create(5));
 
@@ -158,11 +156,9 @@ class Work {
     // share the record to where it needs to be referenced
     var work = Builtin.freeze(result);
 
-    Group.request(work.santa, RequestSubgroup.create(1, work, work.waiting_santa));
     Group.request(work.elves, RequestSubgroup.create(3, work, work.waiting_elves));
     Group.request(work.reindeer, RequestSubgroup.create(9, work, work.waiting_reindeer));
 
-    Group.add(work.santa, Cell.create(new Santa));
     Work._create_elves(work.elves, 10);
     Work._create_reindeer(work.reindeer, 9);
   }
@@ -178,39 +174,29 @@ class Work {
   }
 
   _process(self: imm) {
-    when(var santa = self.waiting_santa, var elves = self.waiting_elves, var reindeer = self.waiting_reindeer) {
-      match santa.remove() {
-        var santa: SubGroup[Santa] => { /* make sure santa is back */
-          match reindeer.remove() { /* prioritise the reindeer */
-            var reindeer: SubGroup[Reindeer] => {
+    when(var santa = self.santa, var elves = self.waiting_elves, var reindeer = self.waiting_reindeer) {
+      match reindeer.remove() { /* prioritise the reindeer */
+        var reindeer: SubGroup[Reindeer] => {
+          when() {
+            Builtin.print("Reindeer and Santa meet to work\n");
+            Work._return(self.reindeer, reindeer);
+            self._process();
+          }
+        }
+
+        var _: None => {
+          match elves.remove() {
+            var elves: SubGroup[Elf] => {
               when() {
-                Builtin.print("Reindeer and Santa meet to work\n");
-                Work._return(self.reindeer, reindeer);
-                Work._return(self.santa, santa);
+                Builtin.print("Elves and Santa meet to Work\n");
+                Work._return(self.elves, elves);
                 self._process();
               }
             }
 
-            var _: None => {
-              match elves.remove() {
-                var elves: SubGroup[Elf] => {
-                  when() {
-                    Builtin.print("Elves and Santa meet to Work\n");
-                    Work._return(self.elves, elves);
-                    Work._return(self.santa, santa);
-                    self._process();
-                  }
-                }
-
-                var _: None => {
-                  /* there was no work */
-                  Work._return(self.santa, santa);
-                }
-              }
-            }
+            var _: None => { /* there was no work */ }
           }
         }
-        var _: None => { /* wait until santa comes back */ }
       }
     }
   }
