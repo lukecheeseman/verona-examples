@@ -1,0 +1,66 @@
+use "../common/list.verona"
+
+class Main {
+  create_numbers(n: U64 & imm): Queue[U64Obj] & iso {
+    if n > 0 {
+      var numbers = Main.create_numbers(n - 1);
+      (mut-view numbers).add(U64Obj.create(n));
+      numbers
+    } else {
+      Queue.create(0)
+    }
+  }
+
+  sum_seq(numbers: Queue[U64Obj] & iso): U64 & imm {
+    match (mut-view numbers).remove() {
+      var _: None => { 0 }
+      var o: U64Obj => { o.v + Main.sum_seq(numbers) }
+    }
+  }
+
+  _split(list: Queue[U64Obj] & mut, at: U64 & imm): Queue[U64Obj] & iso {
+    if at > 0 {
+      var tail = Main._split(list, at - 1);
+      match (mut-view list).remove() {
+        var _: None => { /* we checked it was long enough */ }
+        var o: U64Obj => { (mut-view tail).add(o) }
+      };
+      tail
+    } else {
+      Queue.create(0)
+    }
+  }
+
+  sum(numbers: Queue[U64Obj] & iso, result: cown[U64Obj] & imm) {
+    if numbers.length <= 100 {
+      when(result) {
+        result.v = Main.sum_seq(numbers);
+      };
+    } else {
+      var tail = Main._split(mut-view numbers, numbers.length / 2);
+
+      var p1 = cown.create(U64Obj.create(0));
+      Main.sum(numbers, p1);
+
+      var p2 = cown.create(U64Obj.create(0));
+      Main.sum(tail, p2);
+
+      when(result, p1, p2) { result.v = p1.v + p2.v; }
+    };
+  }
+
+  main() {
+    // Numbers could be any list of values
+    var n = 5000;
+    var numbers = Main.create_numbers(n);
+
+    var result = cown.create(U64Obj.create(0));
+    Main.sum(numbers, result);
+    when(result) {
+      Builtin.print2("sum({:#}) = {:#}\n", n, result.v);
+    }
+
+    // Builtin.print2("sum({:#}) = {:#}\n", n, Main.sum_seq(numbers));
+  }
+
+}

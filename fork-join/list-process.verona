@@ -1,0 +1,67 @@
+use "../common/list.verona"
+
+class Main {
+  create_numbers(n: U64 & imm): Queue[U64Obj] & iso {
+    if n > 0 {
+      var numbers = Main.create_numbers(n - 1);
+      (mut-view numbers).add(U64Obj.create(n));
+      numbers
+    } else {
+      Queue.create(0)
+    }
+  }
+
+  sum_seq(numbers: Queue[U64Obj] & iso): U64 & imm {
+    match (mut-view numbers).remove() {
+      var _: None => { 0 }
+      var o: U64Obj => { o.v + Main.sum_seq(numbers) }
+    }
+  }
+
+  _take(list: Queue[U64Obj] & mut, n: U64 & imm): Queue[U64Obj] & iso {
+    if n > 0 {
+      var tail = Main._take(list, n - 1);
+      match (mut-view list).remove() {
+        var _: None => { /* we checked it was long enough */ }
+        var o: U64Obj => { (mut-view tail).add(o) }
+      };
+      tail
+    } else {
+      Queue.create(0)
+    }
+  }
+
+  // This is super slow because the split operations are all sequential
+  // but a read of imm? would the list api ned two at methods?
+  sum(numbers: Queue[U64Obj] & mut): cown[U64Obj] & imm {
+    var jobsize = 100;
+    if numbers.length <= jobsize {
+      var sub = Main._take(numbers, numbers.length);
+      var partial = cown.create(U64Obj.create(0));
+      when(partial) { partial.v = Main.sum_seq(sub); };
+      partial
+    } else {
+      var sub = Main._take(numbers, jobsize);
+      // I've put rest here so that it is likely to get a lower address and
+      // break some ordering in single acquire semantics
+      var rest = Main.sum(numbers);
+      var partial = cown.create(U64Obj.create(0));
+      when(partial) { partial.v = Main.sum_seq(sub); };
+      when(partial, rest) { partial.v = partial.v + rest.v; };
+      partial
+    }
+  }
+
+  main() {
+    // Numbers could be any list of values
+    var n = 1000;
+    var numbers = Main.create_numbers(n);
+
+    when(var result = Main.sum(mut-view numbers)) {
+      Builtin.print2("sum({:#}) = {:#}\n", n, result.v);
+    }
+
+    // Builtin.print2("sum({:#}) = {:#}\n", n, Main.sum_seq(numbers));
+  }
+
+}

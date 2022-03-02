@@ -1,0 +1,27 @@
+class Main {
+  fib_seq(n: U64 & imm): U64 & imm {
+    if n <= 1 { n }
+    else { Main.fib_seq(n - 1) + Main.fib_seq(n - 2) }
+  }
+
+  fib(n: U64 & imm): cown[U64Obj] & imm {
+    if n <= 10 {
+      var result = cown.create(U64Obj.create(0));
+      when(result) { result.v = Main.fib_seq(n); };
+      result
+    } else {
+      var f1 = Main.fib(n - 1);
+      var f2 = Main.fib(n - 2);
+      var result = cown.create(U64Obj.create(0));
+      when(result, f1, f2) { result.v = f1.v + f2.v; };
+      result
+    }
+  }
+
+  main() {
+    var n = 30;
+    when(var result = Main.fib(n)) {
+      Builtin.print2("fib({:#}) = {:#}\n", n, result.v);
+    }
+  }
+}
