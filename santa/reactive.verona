@@ -180,8 +180,8 @@ class Work {
           when() {
             Builtin.print("Reindeer and Santa meet to work\n");
             Work._return(self.reindeer, reindeer);
-            self._process();
-          }
+          };
+          self._process();
         }
 
         var _: None => {
@@ -190,8 +190,8 @@ class Work {
               when() {
                 Builtin.print("Elves and Santa meet to Work\n");
                 Work._return(self.elves, elves);
-                self._process();
-              }
+              };
+              self._process();
             }
 
             var _: None => { /* there was no work */ }
