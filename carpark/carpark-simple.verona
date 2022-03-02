@@ -1,0 +1,167 @@
+/* Carpark Example
+ *
+ * The entities of the example are:
+ *   - car park control: maintains a count of the number of cars in the carpark
+ *     and its maximum capacity. When a car tries to arrive, if there is a space
+ *     then the car arrives and the count is increased, otherwise the behaviour
+ *     waits for a signall that state of the carpark has changed (a car has
+ *     left) and then arrives. This is similar for when a car tries to depart
+ *     except that it is when the carpark is empty and not full that depart must
+ *     wait.
+ *   - Arrive and Depart, two generators that create arrive and depart events
+ *     for the car park controller
+ *
+ * These are tied together in main, and arrive and depart generator share a
+ * carpark control.
+ */
+
+ use "../common/list.verona"
+
+class Depart {}
+class Arrive {}
+
+class CarParkControl {
+  _capacity: U64 & imm;
+  _count: U64 & imm;
+
+  // There are awaiting events that cannot be processed immediately
+  _waiting: (Queue[Depart] & iso) | (Queue[Arrive] & iso);
+
+  create(capacity: U64 & imm): cown[CarParkControl] & imm {
+    var result = new CarParkControl;
+    result._count = 0;
+    result._capacity = capacity;
+    result._waiting = Queue.create(0);
+    cown.create(result)
+  }
+
+  arrive(control: cown[CarParkControl] & imm) {
+    when (var c = control) {
+      if (c._count) == (c._capacity) {
+        // Too many cars so create a pending arrival
+        match c._waiting {
+          var waiting: Queue[Arrive] => { (mut-view waiting).add(new Arrive) }
+          var waiting: Queue[Depart] => {
+            match (mut-view waiting).remove() {
+              var _: Depart => {
+                CarParkControl.depart(control);
+                CarParkControl.arrive(control);
+              }
+              var _: None => {
+                var waiting = Queue.create(0);
+                (mut-view waiting).add(new Arrive);
+                c._waiting = waiting;
+              }
+            }
+          }
+        }
+      } else {
+        // increase the count and service any waiting depart
+        c._count = c._count + 1;
+        Builtin.print1("+: {:#}\n", c._count);
+        match c._waiting {
+          var waiting: Queue[Arrive] => { /* nothing to do */ }
+          var waiting: Queue[Depart] => {
+            match (mut-view waiting).remove() {
+              var _: None => { /* nothing to do as the queue is empty */ }
+              var _: Depart => { CarParkControl.depart(control); }
+            }
+          }
+        }
+      };
+    }
+  }
+
+  depart(control: cown[CarParkControl] & imm) {
+    when (var c = control) {
+      if (c._count) == 0 {
+        // Too few cars so create a pending depart
+        match c._waiting {
+          var waiting: Queue[Depart] => { (mut-view waiting).add(new Depart) }
+          var waiting: Queue[Arrive] => {
+            match (mut-view waiting).remove() {
+              var _: Arrive => {
+                CarParkControl.arrive(control);
+                CarParkControl.depart(control);
+              }
+              var _: None => {
+                var waiting = Queue.create(0);
+                (mut-view waiting).add(new Depart);
+                c._waiting = waiting;
+              }
+            }
+          }
+        }
+      } else {
+        // increase the count and service any waiting arrive
+        c._count = c._count - 1;
+        Builtin.print1("-: {:#}\n", c._count);
+        match c._waiting {
+          var waiting: Queue[Depart] => { /* nothing to do */ }
+          var waiting: Queue[Arrive] => {
+            match (mut-view waiting).remove() {
+              var _: None => { /* nothing to do as the queue is empty */ }
+              var _: Arrive => { CarParkControl.arrive(control); }
+            }
+          }
+        }
+      };
+    }
+  }
+}
+
+// Generator to create 10 arrivals
+class Arrivals {
+  _control: cown[CarParkControl] & imm;
+
+  create(control: cown[CarParkControl] & imm): Arrivals & iso {
+    var result = new Arrivals;
+    result._control = control;
+    result
+  }
+
+  run(self: mut) {
+    var i = 0;
+    while (i < 10) {
+      CarParkControl.arrive(self._control);
+      i = i + 1
+    }
+  }
+}
+
+// Generator to create 10 departures
+class Departures {
+  _control: cown[CarParkControl] & imm;
+
+  create(control: cown[CarParkControl] & imm): Departures & iso {
+    var result = new Departures;
+    result._control = control;
+    result
+  }
+
+  run(self: mut) {
+    var i = 0;
+    while (i < 10) {
+      CarParkControl.depart(self._control);
+      i = i + 1
+    }
+  }
+}
+
+class Main {
+  main() {
+    // create the system
+    var control = CarParkControl.create(2);
+    var arrivals = Arrivals.create(control);
+    var departures = Departures.create(control);
+
+    // asynchronously create arrivals and departures
+    when () {
+      (mut-view arrivals).run();
+    };
+
+    when() {
+      (mut-view departures).run();
+    }
+  }
+}
