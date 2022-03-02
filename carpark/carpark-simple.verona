@@ -25,13 +25,15 @@ class CarParkControl {
   _count: U64 & imm;
 
   // There are awaiting events that cannot be processed immediately
-  _waiting: (Queue[Depart] & iso) | (Queue[Arrive] & iso);
+  _waiting_arrive: Queue[Arrive] & iso;
+  _waiting_depart: Queue[Depart] & iso;
 
   create(capacity: U64 & imm): cown[CarParkControl] & imm {
     var result = new CarParkControl;
     result._count = 0;
     result._capacity = capacity;
-    result._waiting = Queue.create(0);
+    result._waiting_arrive = Queue.create(0);
+    result._waiting_depart = Queue.create(1);
     cown.create(result)
   }
 
@@ -39,34 +41,14 @@ class CarParkControl {
     when (var c = control) {
       if (c._count) == (c._capacity) {
         // Too many cars so create a pending arrival
-        match c._waiting {
-          var waiting: Queue[Arrive] => { (mut-view waiting).add(new Arrive) }
-          var waiting: Queue[Depart] => {
-            match (mut-view waiting).remove() {
-              var _: Depart => {
-                CarParkControl.depart(control);
-                CarParkControl.arrive(control);
-              }
-              var _: None => {
-                var waiting = Queue.create(0);
-                (mut-view waiting).add(new Arrive);
-                c._waiting = waiting;
-              }
-            }
-          }
-        }
+        (mut-view (c._waiting_arrive)).add(new Arrive);
       } else {
         // increase the count and service any waiting depart
         c._count = c._count + 1;
         Builtin.print1("+: {:#}\n", c._count);
-        match c._waiting {
-          var waiting: Queue[Arrive] => { /* nothing to do */ }
-          var waiting: Queue[Depart] => {
-            match (mut-view waiting).remove() {
-              var _: None => { /* nothing to do as the queue is empty */ }
-              var _: Depart => { CarParkControl.depart(control); }
-            }
-          }
+        match (mut-view (c._waiting_depart)).remove() {
+          var _: None => { /* nothing to do as the queue is empty */ }
+          var _: Depart => { CarParkControl.depart(control); }
         }
       };
     }
@@ -76,34 +58,14 @@ class CarParkControl {
     when (var c = control) {
       if (c._count) == 0 {
         // Too few cars so create a pending depart
-        match c._waiting {
-          var waiting: Queue[Depart] => { (mut-view waiting).add(new Depart) }
-          var waiting: Queue[Arrive] => {
-            match (mut-view waiting).remove() {
-              var _: Arrive => {
-                CarParkControl.arrive(control);
-                CarParkControl.depart(control);
-              }
-              var _: None => {
-                var waiting = Queue.create(0);
-                (mut-view waiting).add(new Depart);
-                c._waiting = waiting;
-              }
-            }
-          }
-        }
+        (mut-view (c._waiting_depart)).add(new Depart);
       } else {
         // increase the count and service any waiting arrive
         c._count = c._count - 1;
         Builtin.print1("-: {:#}\n", c._count);
-        match c._waiting {
-          var waiting: Queue[Depart] => { /* nothing to do */ }
-          var waiting: Queue[Arrive] => {
-            match (mut-view waiting).remove() {
-              var _: None => { /* nothing to do as the queue is empty */ }
-              var _: Arrive => { CarParkControl.arrive(control); }
-            }
-          }
+        match (mut-view (c._waiting_arrive)).remove() {
+          var _: None => {  }
+          var _: Arrive => { CarParkControl.arrive(control); }
         }
       };
     }
