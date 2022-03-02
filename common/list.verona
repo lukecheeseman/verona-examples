@@ -122,7 +122,7 @@ class Queue[Value]
     // Decide if we should collect some old nodes.
     if (value)
     {
-      Builtin.print1("Should reclaim some memory! Queue {}\n", self.id);
+      // Builtin.print1("Should reclaim some memory! Queue {}\n", self.id);
 
       // This needs to ensure other references are removed in the type system.
       Builtin.trace(self);
@@ -132,7 +132,7 @@ class Queue[Value]
 
     // In Verona, like in Pony, assignment returns the previous value in the l-value:
     //     x = (y = 5)
-    // Can be seend as move the value from y into x, and store 5 into y.
+    // Can be seen as move the value from y into x, and store 5 into y.
     // Thus,
     //     match(h.value = self.none)
     // sets value, to none, and extracts the old value, and performs a match on it.
