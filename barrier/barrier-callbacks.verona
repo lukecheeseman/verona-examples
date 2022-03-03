@@ -79,7 +79,7 @@ class Mid {
     match (self._particicpant = None.create()) {
       var p: Participant => {
         Builtin.print1("Mid: {:#}\n", p._id);
-        
+
         Builtin.print1("----- Barrier reached {} ------\n", p._id);
         Barrier.wait(p._barrier, Post.create(p));
       }
