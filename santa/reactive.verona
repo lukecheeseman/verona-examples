@@ -8,190 +8,98 @@ class Cell[T] {
     result._data = data;
     result
   }
-
-  extract(self: iso): (T & iso) | (None & imm) {
-    self._data = Builtin.freeze(new None)
-  }
-}
-
-class SubGroup[T] {
-  _resources: Queue[Cell[T]] & iso;
-
-  create(): SubGroup[T] & iso {
-    var result = new SubGroup;
-    result._resources = Queue.create(404);
-    result
-  }
-
-  add(self: mut, resource: Cell[T] & iso) {
-    (mut-view (self._resources)).add(resource);
-  }
-
-  remove(self:mut): (Cell[T] & iso) | (None & imm) {
-    (mut-view (self._resources)).remove()
-  }
-}
-
-interface Request[T] {
-  count(self: imm): U64 & imm;
-  apply(self: imm, subgroup: SubGroup[T] & iso);
-}
-
-class Group[T] {
-  _resources: Queue[Cell[T]] & iso;
-  _request: (Request[T] & imm) | (None & imm);
-
-  create(): cown[Group[T]] & imm {
-    var result = new Group;
-    result._resources = Queue.create(0);
-    result._request = None.create();
-    cown.create(result)
-  }
-
-  // Recursion type checks quicker than iteration
-  _construct_subgroup(resources: Queue[Cell[T]] & mut, subgroup: SubGroup[T] & mut, n: U64 & imm) {
-    if n > 0 {
-      match (resources.remove()) {
-        var _: None => { /* Shouldn't happen as we checked we had enough */ }
-        var r: Cell[T] => {
-          (mut-view subgroup).add(r);
-          Group._construct_subgroup(resources, subgroup, n - 1);
-        }
-      };
-    };
-  }
-
-  _process(group: cown[Group[T]] & imm) {
-    when(var g = group) {
-      match g._request {
-        var _: None => { /* do nothing */ }
-        var request: Request[T] => {
-          var required = request.count();
-          if (g._resources).length >= required {
-            var subgroup = SubGroup.create();
-            Group._construct_subgroup(mut-view (g._resources), mut-view subgroup, required);
-            request.apply(subgroup);
-
-            /* Keep going as we might be able to create more reactions */
-            Group._process(group);
-          };
-        }
-      }
-    }
-  }
-
-  add(group: cown[Group[T]] & imm, resource: Cell[T] & iso) {
-    when(var g = group) {
-      (mut-view (g._resources)).add(resource);
-    };
-    Group._process(group);
-  }
-
-  request(group: cown[Group[T]] & imm, request: Request[T] & imm) {
-    when(var g = group) {
-      g._request = request;
-    };
-    Group._process(group);
-  }
 }
 
 class Reindeer {}
 class Elf {}
 class Santa {}
 
-class RequestSubgroup[T] {
-  size: U64 & imm;
-  work: Work & imm;
-  waiting: cown[Queue[SubGroup[T]]] & imm;
-
-  create(size: U64 & imm, work: Work & imm, waiting: cown[Queue[SubGroup[T]]] & imm): RequestSubgroup[T] & imm {
-    var result = new RequestSubgroup;
-    result.size = size;
-    result.work = work;
-    result.waiting = waiting;
-    Builtin.freeze(result)
-  }
-
-  count(self: imm): U64 & imm { self.size }
-
-  apply(self: imm, subgroup: SubGroup[T] & iso) {
-    (self.work)._add_waiting(self.waiting, subgroup);
-  }
+interface Creater[T] { generate(self: imm): T & iso; }
+class ReindeerCreater {
+  create(): ReindeerCreater & imm { Builtin.freeze(new ReindeerCreater) }
+  generate(self: imm): Reindeer & iso { new Reindeer }
+}
+class ElfCreater {
+  create(): ElfCreater & imm { Builtin.freeze(new ElfCreater) }
+  generate(self: imm): Elf & iso { new Elf }
 }
 
 class Work {
   santa: cown[Santa] & imm;
-  elves: cown[Group[Elf]] & imm;
-  reindeer: cown[Group[Reindeer]] & imm;
 
-  waiting_elves: cown[Queue[SubGroup[Elf]]] & imm;
-  waiting_reindeer: cown[Queue[SubGroup[Reindeer]]] & imm;
+  reindeer_threshold: U64 & imm;
+  waiting_reindeer: cown[Queue[Queue[Cell[Reindeer]]]] & imm;
+  reindeer: cown[Queue[Cell[Reindeer]]] & imm;
 
-  // Do these recursively as they type check much quicker that iteration
-  _create_elves(group: cown[Group[Elf]] & imm, n: U64 & imm) {
+  elves: cown[Queue[Cell[Elf]]] & imm;
+  elf_threshold: U64 & imm;
+  waiting_elves: cown[Queue[Queue[Cell[Elf]]]] & imm;
+
+  // Do these recursively as they type check much quicker than iteratively
+  take_subgroup[T](group: Queue[Cell[T]] & mut, n: U64 & imm): Queue[Cell[T]] & iso {
     if n > 0 {
-      Group.add(group, Cell.create(new Elf));
-      Work._create_elves(group, n - 1);
+      var subgroup = Work.take_subgroup(group, n - 1);
+      match group.remove() {
+        var _: None => { /* we checked we had enough */ }
+        var member: Cell[T] => {
+          (mut-view subgroup).add(member);
+        }
+      };
+      subgroup
+    } else {
+      Queue.create(0)
     }
   }
 
-  _create_reindeer(group: cown[Group[Reindeer]] & imm, n: U64 & imm) {
-    if n > 0 {
-      Group.add(group, Cell.create(new Reindeer));
-      Work._create_reindeer(group, n - 1);
-    }
-  }
-
-  create() {
-    var result = new Work;
-
-    result.santa = cown.create(new Santa);
-    result.elves = Group.create();
-    result.reindeer = Group.create();
-
-    result.waiting_elves = cown.create(Queue.create(4));
-    result.waiting_reindeer = cown.create(Queue.create(5));
-
-    // The groups are all set up so freeze everything so we can
-    // share the record to where it needs to be referenced
-    var work = Builtin.freeze(result);
-
-    Group.request(work.elves, RequestSubgroup.create(3, work, work.waiting_elves));
-    Group.request(work.reindeer, RequestSubgroup.create(9, work, work.waiting_reindeer));
-
-    Work._create_elves(work.elves, 10);
-    Work._create_reindeer(work.reindeer, 9);
-  }
-
-  _return[T](group: cown[Group[T]] & imm, subgroup: SubGroup[T] & iso) {
-    match (mut-view subgroup).remove() {
-      var _: None => { /* We're done */ }
-      var member: Cell[T] => {
-        Group.add(group, member);
-        Work._return(group, subgroup);
+  add[T](self: imm, member: Cell[T] & iso, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm) {
+    when(var group = group) {
+      group.add(member);
+      if group.length >= threshold {
+        var subgroup = Work.take_subgroup(group, threshold);
+        when(var waiting = waiting) {
+          waiting.add(subgroup);
+          self.process();
+        }
       }
     }
   }
 
-  _process(self: imm) {
+  create_members[T](self: imm, creater: Creater[T] & imm, n: U64 & imm, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm) {
+    if n > 0 {
+      self.add(Cell.create(creater.generate()), group, threshold, waiting);
+      self.create_members(creater, n - 1, group, threshold, waiting);
+    }
+  }
+
+  return_subgroup[T](self: imm, subgroup: Queue[Cell[T]] & iso, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting:  cown[Queue[Queue[Cell[T]]]] & imm) {
+    match (mut-view subgroup).remove() {
+      var _: None => { /* We're done */ }
+      var member: Cell[T] => {
+        self.add(member, group, threshold, waiting);
+        self.return_subgroup(subgroup, group, threshold, waiting);
+      }
+    }
+  }
+
+  process(self: imm) {
     when(var santa = self.santa, var elves = self.waiting_elves, var reindeer = self.waiting_reindeer) {
       match reindeer.remove() { /* prioritise the reindeer */
-        var reindeer: SubGroup[Reindeer] => {
+        var reindeer: Queue[Cell[Reindeer]] => {
           when() {
             Builtin.print("Reindeer and Santa meet to work\n");
-            Work._return(self.reindeer, reindeer);
+            self.return_subgroup(reindeer, self.reindeer, self.reindeer_threshold, self.waiting_reindeer);
           };
-          self._process();
+          self.process();
         }
 
         var _: None => {
           match elves.remove() {
-            var elves: SubGroup[Elf] => {
+            var elves: Queue[Cell[Elf]] => {
               when() {
                 Builtin.print("Elves and Santa meet to Work\n");
-                Work._return(self.elves, elves);
+                self.return_subgroup(elves, self.elves, self.elf_threshold, self.waiting_elves);
               };
-              self._process();
+              self.process();
             }
 
             var _: None => { /* there was no work */ }
@@ -201,11 +109,25 @@ class Work {
     }
   }
 
-  _add_waiting[T](self: imm, waiting: cown[Queue[SubGroup[T]]] & imm, subgroup: SubGroup[T] & iso) {
-    when(waiting) {
-      waiting.add(subgroup);
-      self._process();
-    };
+  create() {
+    var result = new Work;
+
+    result.santa = cown.create(new Santa);
+
+    result.reindeer = cown.create(Queue.create(1));
+    result.reindeer_threshold = 9;
+    result.waiting_reindeer = cown.create(Queue.create(5));
+
+    result.elves = cown.create(Queue.create(0));
+    result.elf_threshold = 3;
+    result.waiting_elves = cown.create(Queue.create(4));
+
+    // The groups are all set up so freeze everything so we can
+    // share the record to where it needs to be referenced
+    var work = Builtin.freeze(result);
+
+    work.create_members(ReindeerCreater.create(), work.reindeer_threshold, work.reindeer, work.reindeer_threshold, work.waiting_reindeer);
+    work.create_members(ElfCreater.create(), work.elf_threshold, work.elves, work.elf_threshold, work.waiting_elves);
   }
 }
 

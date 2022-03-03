@@ -1,0 +1,157 @@
+use "../common/list.verona"
+
+class Reindeer {}
+class Elf {}
+class Santa {}
+
+class Work {
+  santa: cown[Santa] & imm;
+  elves: cown[Queue[Elf]] & imm;
+  reindeer: cown[Queue[Reindeer]] & imm;
+
+  waiting_elves: cown[Queue[Queue[Elf]]] & imm;
+  waiting_reindeer: cown[Queue[Queue[Reindeer]]] & imm;
+
+  // Do these recursively as they type check much quicker than iteratively
+  take_elf_group(elves: Queue[Elf] & mut, n: U64 & imm): Queue[Elf] & iso {
+    if n > 0 {
+      var group = Work.take_elf_group(elves, n - 1);
+      match elves.remove() {
+        var _: None => { /* we checked we had enough */ }
+        var elf: Elf => {
+          (mut-view group).add(elf);
+        }
+      };
+      group
+    } else {
+      Queue.create(77)
+    }
+  }
+
+  take_reindeer_group(reindeer: Queue[Reindeer] & mut, n: U64 & imm): Queue[Reindeer] & iso {
+    if n > 0 {
+      var group = Work.take_reindeer_group(reindeer, n - 1);
+      match reindeer.remove() {
+        var _: None => { /* we checked we had enough */ }
+        var deer: Reindeer => {
+          (mut-view group).add(deer);
+        }
+      };
+      group
+    } else {
+      Queue.create(48)
+    }
+  }
+
+  add_elf(self: imm, elf: Elf & iso) {
+    when(var elves = self.elves) {
+      elves.add(elf);
+      if elves.length >= 3 {
+        var group = Work.take_elf_group(elves, 3);
+        when(var waiting_elves = self.waiting_elves) {
+          waiting_elves.add(group);
+          self.process();
+        }
+      }
+    }
+  }
+
+  add_reindeer(self: imm, deer: Reindeer & iso) {
+    when(var reindeer = self.reindeer) {
+      reindeer.add(deer);
+      if reindeer.length >= 9 {
+        var group = Work.take_reindeer_group(reindeer, 9);
+        when(var waiting_reindeer = self.waiting_reindeer) {
+          waiting_reindeer.add(group);
+          self.process();
+        }
+      }
+    }
+  }
+
+  create_elves(self: imm, n: U64 & imm) {
+    if n > 0 {
+      self.add_elf(new Elf);
+      self.create_elves(n - 1);
+    }
+  }
+
+  create_reindeer(self: imm, n: U64 & imm) {
+    if n > 0 {
+      self.add_reindeer(new Reindeer);
+      self.create_reindeer(n - 1);
+    }
+  }
+
+  return_elves(self: imm, elves: Queue[Elf] & iso) {
+    match (mut-view elves).remove() {
+      var _: None => { /* We're done */ }
+      var elf: Elf => {
+        self.add_elf(elf);
+        self.return_elves(elves);
+      }
+    }
+  }
+
+  return_reindeer(self: imm, reindeer: Queue[Reindeer] & iso) {
+    match (mut-view reindeer).remove() {
+      var _: None => { /* We're done */ }
+      var deer: Reindeer => {
+        self.add_reindeer(deer);
+        self.return_reindeer(reindeer);
+      }
+    }
+  }
+
+  process(self: imm) {
+    when(var santa = self.santa, var elves = self.waiting_elves, var reindeer = self.waiting_reindeer) {
+      match reindeer.remove() { /* prioritise the reindeer */
+        var reindeer: Queue[Reindeer] => {
+          when() {
+            Builtin.print("Reindeer and Santa meet to work\n");
+            self.return_reindeer(reindeer);
+          };
+          self.process();
+        }
+
+        var _: None => {
+          match elves.remove() {
+            var elves: Queue[Elf] => {
+              when() {
+                Builtin.print("Elves and Santa meet to Work\n");
+                self.return_elves(elves);
+              };
+              self.process();
+            }
+
+            var _: None => { /* there was no work */ }
+          }
+        }
+      }
+    }
+  }
+
+  create() {
+    var result = new Work;
+
+    result.santa = cown.create(new Santa);
+    result.elves = cown.create(Queue.create(0));
+    result.reindeer = cown.create(Queue.create(1));
+
+    result.waiting_elves = cown.create(Queue.create(4));
+    result.waiting_reindeer = cown.create(Queue.create(5));
+
+    // The groups are all set up so freeze everything so we can
+    // share the record to where it needs to be referenced
+    var work = Builtin.freeze(result);
+
+    work.create_elves(10);
+    work.create_reindeer(9);
+  }
+}
+
+class Main {
+  main() {
+    Work.create();
+  }
+}
