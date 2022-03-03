@@ -41,9 +41,7 @@ class Work {
       var subgroup = Work.take_members(group, n - 1);
       match group.remove() {
         var _: None => { /* we checked we had enough */ }
-        var member: Cell[T] => {
-          (mut-view subgroup).add(member);
-        }
+        var member: Cell[T] => { (mut-view subgroup).add(member); }
       };
       subgroup
     } else {
