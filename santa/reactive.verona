@@ -124,8 +124,8 @@ class Work {
     // share the record to where it needs to be referenced
     var work = Builtin.freeze(result);
 
-    work.create_members(ReindeerCreater.create(), 9, work.reindeer_info);
-    work.create_members(ElfCreater.create(), 3, work.elf_info);
+    when() { work.create_members(ReindeerCreater.create(), 9, work.reindeer_info); };
+    when() { work.create_members(ElfCreater.create(), 3, work.elf_info); }
   }
 }
 
