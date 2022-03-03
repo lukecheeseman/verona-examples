@@ -20,52 +20,14 @@ class Cell[T] {
 }
 
 /*
- * A reader is a wrapper around a callback, writing to the reader
- * calls the callback with the value.
- */
-class Reader[T] {
-  _callback: Callback1[Cell[T]] & iso;
-
-  create(callback: Callback1[Cell[T]] & iso): Reader[T] & iso {
-    var result = new Reader;
-    result._callback = callback;
-    result
-  }
-
-  write(self: iso, value: T & iso) {
-    (mut-view (self._callback)).apply(Cell.create(value));
-  }
-}
-
-/*
- * A writer is a wrapper around some data, reading the writer
- * extracts the data.
- */
-class Writer[T] {
-  _data: (Cell[T] & iso) | (None & imm);
-
-  create(data: T & iso): Writer[T] & iso {
-    var result = new Writer;
-    result._data = Cell.create(data);
-    result
-  }
-
-  read(self: iso): Cell[T] & iso {
-    match (self._data = Builtin.freeze(new None)) {
-      var c: Cell[T] => c,
-    }
-  }
-}
-
-/*
  * A channel has a queue of readers and a queue of writers.
  * Reading when the are Writers services the read, when there are Readers, enques
  * the read, when there are no Writers left in the queue of writers swaps the queue.
  * Similarly for Writers.
  */
 class Channel[T] {
-  reads: Queue[Reader[T]] & iso;
-  writes: Queue[Writer[T]] & iso;
+  reads: Queue[Callback1[Cell[T]]] & iso;
+  writes: Queue[Cell[T]] & iso;
 
   create(): Channel[T] & iso {
     var result = new Channel;
@@ -81,10 +43,10 @@ class Channel[T] {
     if (self.reads).length > 0 {
       match (mut-view (self.reads)).remove() {
         var _: None => { /* we checked there were enough */ }
-        var r: Reader[T] => { r.write(value); }
+        var callback: Callback1[Cell[T]] & iso => { (mut-view callback).apply(Cell.create(value)); }
       }
     } else {
-      (mut-view (self.writes)).add(Writer.create(value));
+      (mut-view (self.writes)).add(Cell.create(value));
     }
   }
 
@@ -95,29 +57,10 @@ class Channel[T] {
     if (self.writes).length > 0 {
       match (mut-view (self.writes)).remove() {
         var _: None => { /* we checked there were enough */ }
-        var w: Writer[T] => { (mut-view callback).apply(w.read()); }
+        var value: Cell[T] => { (mut-view callback).apply(value); }
       }
     } else {
-      (mut-view (self.reads)).add(Reader.create(callback));
-    }
-  }
-}
-
-/*
- * Create a producer and consumer that share a channel to communicate.
- */
-class Producer[T: iso] {
-  _channel: cown[Channel[T]] & imm;
-
-  create(channel: cown[Channel[T]] & imm): Producer[T] & iso {
-    var result = new Producer;
-    result._channel = channel;
-    result
-  }
-
-  produce(self: mut, value: T) {
-    when (var channel = self._channel) {
-      channel.write(value);
+      (mut-view (self.reads)).add(callback);
     }
   }
 }
@@ -132,41 +75,13 @@ class Consume[T] {
   }
 }
 
-class Consumer[T] {
-  _channel: cown[Channel[T]] & imm;
-
-  create(channel: cown[Channel[T]] & imm): Consumer[T] & iso {
-    var result = new Consumer;
-    result._channel = channel;
-    result
-  }
-
-  consume(self: mut) {
-    when (var channel = self._channel) {
-      channel.read(Consume.create());
-    }
-  }
-}
-
 class Main {
   main() {
     var channel = cown.create(Channel.create());
 
-    when() {
-      var c = Consumer.create(channel);
-      (mut-view c).consume();
-      (mut-view c).consume();
-      (mut-view c).consume();
-      (mut-view c).consume();
-    };
+    when(channel) { channel.write(U64Obj.create(30)); };
 
-    when() {
-      var p = Producer.create(channel);
-      (mut-view p).produce(U64Obj.create(0));
-      (mut-view p).produce(U64Obj.create(1));
-      (mut-view p).produce(U64Obj.create(2));
-      (mut-view p).produce(U64Obj.create(3));
-    };
+    when(channel) { channel.read(Consume.create()); }
 
   }
 }
