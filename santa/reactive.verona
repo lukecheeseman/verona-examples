@@ -88,7 +88,6 @@ class Work {
             Builtin.print("Reindeer and Santa meet to work\n");
             self.return_members(reindeer, self.reindeer_info);
           };
-          self.process();
         }
 
         var _: None => {
@@ -98,7 +97,6 @@ class Work {
                 Builtin.print("Elves and Santa meet to Work\n");
                 self.return_members(elves, self.elf_info);
               };
-              self.process();
             }
 
             var _: None => { /* there was no work */ }
