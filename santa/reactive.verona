@@ -27,9 +27,9 @@ class ElfCreater {
 class Work {
   santa: cown[Santa] & imm;
 
+  reindeer: cown[Queue[Cell[Reindeer]]] & imm;
   reindeer_threshold: U64 & imm;
   waiting_reindeer: cown[Queue[Queue[Cell[Reindeer]]]] & imm;
-  reindeer: cown[Queue[Cell[Reindeer]]] & imm;
 
   elves: cown[Queue[Cell[Elf]]] & imm;
   elf_threshold: U64 & imm;
