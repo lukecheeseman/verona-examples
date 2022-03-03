@@ -36,9 +36,9 @@ class Work {
   waiting_elves: cown[Queue[Queue[Cell[Elf]]]] & imm;
 
   // Do these recursively as they type check much quicker than iteratively
-  take_subgroup[T](group: Queue[Cell[T]] & mut, n: U64 & imm): Queue[Cell[T]] & iso {
+  take_members[T](group: Queue[Cell[T]] & mut, n: U64 & imm): Queue[Cell[T]] & iso {
     if n > 0 {
-      var subgroup = Work.take_subgroup(group, n - 1);
+      var subgroup = Work.take_members(group, n - 1);
       match group.remove() {
         var _: None => { /* we checked we had enough */ }
         var member: Cell[T] => {
@@ -51,11 +51,11 @@ class Work {
     }
   }
 
-  add[T](self: imm, member: Cell[T] & iso, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm) {
+  add_member[T](self: imm, member: Cell[T] & iso, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm) {
     when(var group = group) {
       group.add(member);
       if group.length >= threshold {
-        var subgroup = Work.take_subgroup(group, threshold);
+        var subgroup = Work.take_members(group, threshold);
         when(var waiting = waiting) {
           waiting.add(subgroup);
           self.process();
@@ -64,19 +64,12 @@ class Work {
     }
   }
 
-  create_members[T](self: imm, creater: Creater[T] & imm, n: U64 & imm, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm) {
-    if n > 0 {
-      self.add(Cell.create(creater.generate()), group, threshold, waiting);
-      self.create_members(creater, n - 1, group, threshold, waiting);
-    }
-  }
-
-  return_subgroup[T](self: imm, subgroup: Queue[Cell[T]] & iso, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting:  cown[Queue[Queue[Cell[T]]]] & imm) {
+  return_members[T](self: imm, subgroup: Queue[Cell[T]] & iso, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting:  cown[Queue[Queue[Cell[T]]]] & imm) {
     match (mut-view subgroup).remove() {
       var _: None => { /* We're done */ }
       var member: Cell[T] => {
-        self.add(member, group, threshold, waiting);
-        self.return_subgroup(subgroup, group, threshold, waiting);
+        self.add_member(member, group, threshold, waiting);
+        self.return_members(subgroup, group, threshold, waiting);
       }
     }
   }
@@ -87,7 +80,7 @@ class Work {
         var reindeer: Queue[Cell[Reindeer]] => {
           when() {
             Builtin.print("Reindeer and Santa meet to work\n");
-            self.return_subgroup(reindeer, self.reindeer, self.reindeer_threshold, self.waiting_reindeer);
+            self.return_members(reindeer, self.reindeer, self.reindeer_threshold, self.waiting_reindeer);
           };
           self.process();
         }
@@ -97,7 +90,7 @@ class Work {
             var elves: Queue[Cell[Elf]] => {
               when() {
                 Builtin.print("Elves and Santa meet to Work\n");
-                self.return_subgroup(elves, self.elves, self.elf_threshold, self.waiting_elves);
+                self.return_members(elves, self.elves, self.elf_threshold, self.waiting_elves);
               };
               self.process();
             }
@@ -106,6 +99,13 @@ class Work {
           }
         }
       }
+    }
+  }
+
+  create_members[T](self: imm, creater: Creater[T] & imm, n: U64 & imm, group: cown[Queue[Cell[T]]] & imm, threshold: U64 & imm, waiting: cown[Queue[Queue[Cell[T]]]] & imm) {
+    if n > 0 {
+      self.add_member(Cell.create(creater.generate()), group, threshold, waiting);
+      self.create_members(creater, n - 1, group, threshold, waiting);
     }
   }
 
